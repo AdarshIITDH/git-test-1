@@ -1,0 +1,1446 @@
+You have full administrative access to:
+
+- Rancher Prime
+- SUSE AI Factory UI
+- Rancher local management cluster
+- Rancher-managed downstream cluster named exactly:
+
+coding-assistant
+
+There is ALREADY a fully working private coding assistant running on
+the coding-assistant downstream cluster.
+
+The existing solution includes:
+
+- code-server
+- Continue VS Code extension
+- qwen-vllm / vLLM
+- LiteLLM
+- PostgreSQL
+- developer virtual keys
+- DNS
+- TLS
+- Ingress
+- persistent storage
+- Qwen coding model
+
+The current coding assistant is WORKING.
+
+Your task is ONLY to migrate:
+
+1. vLLM
+2. LiteLLM
+
+so that they are deployed and managed through:
+
+Rancher Prime
+-> SUSE AI Factory
+-> Apps / AI Library
+
+and appear under:
+
+Rancher Prime
+-> SUSE AI Factory
+-> Workloads
+
+with status:
+
+Ready
+
+Target cluster:
+
+coding-assistant
+
+
+============================================================
+MOST IMPORTANT RULE
+============================================================
+
+vLLM and LiteLLM MUST be deployed THROUGH THE SUSE AI FACTORY UI.
+
+DO NOT perform the final deployment using:
+
+helm install
+helm upgrade
+kubectl apply Deployment
+manual standalone Helm releases
+
+The final vLLM and LiteLLM resources must originate from the SUSE AI
+Factory application workflow and create the appropriate AI Factory
+managed workload resources.
+
+It is acceptable to use kubectl/helm ONLY for:
+
+- discovery
+- backups
+- validation
+- database backup/restore
+- checking resources
+- troubleshooting
+
+NOT for the final vLLM/LiteLLM deployment.
+
+
+============================================================
+DO NOT TOUCH THESE COMPONENTS
+============================================================
+
+Do NOT modify, delete, recreate, scale or restart:
+
+code-server
+
+code-server Service
+
+code-server PVC
+
+code-server workspace
+
+Continue extension
+
+/home/coder/.continue/config.yaml
+
+existing code-server authentication
+
+existing developer workspace
+
+existing DNS records
+
+existing TLS certificates
+
+existing external Ingress hostname
+
+existing public coding assistant URL
+
+existing developer virtual keys
+
+unless explicitly required to preserve them.
+
+The following user experience MUST remain unchanged:
+
+Browser
+    ->
+code-server
+    ->
+Continue
+    ->
+SUSE Private Coding Assistant
+
+
+============================================================
+CURRENT EXTERNAL CONTRACT MUST REMAIN THE SAME
+============================================================
+
+The developer API endpoint must remain:
+
+https://api.aicodeassistant.demo.local/v1
+
+The Continue configuration must remain logically:
+
+name: SUSE Private Coding Assistant
+
+provider: openai
+
+model: qwen-coder
+
+apiBase:
+https://api.aicodeassistant.demo.local/v1
+
+apiKey:
+EXISTING developer-specific LiteLLM virtual key
+
+
+DO NOT change developers to:
+
+VLLM_API_KEY
+
+DO NOT give developers:
+
+LITELLM_MASTER_KEY
+
+
+============================================================
+CREDENTIAL SOURCE
+============================================================
+
+Existing credentials were previously collected under:
+
+/root/cred.txt
+
+Inspect this file but DO NOT print all credentials unnecessarily.
+
+Required secrets to preserve include:
+
+VLLM_API_KEY
+
+LITELLM_MASTER_KEY
+
+LITELLM_SALT_KEY
+
+POSTGRES_PASSWORD
+
+existing developer LiteLLM virtual keys
+
+existing code-server credentials
+
+
+Do NOT rotate any key during migration.
+
+Do NOT generate new developer keys unless the old keys cannot be
+preserved.
+
+The SAME developer key currently configured in Continue must continue
+working after migration.
+
+
+============================================================
+PHASE 1 — IDENTIFY CORRECT CLUSTERS
+============================================================
+
+Identify:
+
+Rancher local management cluster
+
+and downstream cluster exactly named:
+
+coding-assistant
+
+Do not assume the current kubectl context is correct.
+
+Record:
+
+Rancher cluster ID
+
+Fleet cluster name
+
+Kubernetes version
+
+RKE2 version
+
+nodes
+
+GPU resources
+
+default StorageClass
+
+current namespaces
+
+
+Save:
+
+/root/coding-assistant-aif-migration/discovery.txt
+
+
+============================================================
+PHASE 2 — INVENTORY CURRENT WORKING SYSTEM
+============================================================
+
+Create:
+
+/root/coding-assistant-aif-migration/
+
+Record current resources on the coding-assistant cluster:
+
+kubectl get pods -A
+
+kubectl get deployment,statefulset -A
+
+kubectl get svc -A
+
+kubectl get ingress -A
+
+kubectl get pvc -A
+
+kubectl get secret -A
+
+helm list -A
+
+
+Identify exact current resources for:
+
+code-server
+
+LiteLLM
+
+PostgreSQL
+
+vLLM / qwen-vllm
+
+Ingress
+
+TLS
+
+model PVC/cache
+
+
+Save detailed YAML for ONLY relevant resources.
+
+Example:
+
+kubectl get deployment <VLLM> -n <NS> -o yaml
+
+kubectl get deployment <LITELLM> -n <NS> -o yaml
+
+kubectl get statefulset <POSTGRES> -n <NS> -o yaml
+
+kubectl get service <LITELLM-SERVICE> -n <NS> -o yaml
+
+kubectl get service <VLLM-SERVICE> -n <NS> -o yaml
+
+kubectl get ingress <CURRENT-INGRESS> -n <NS> -o yaml
+
+
+Save them under:
+
+/root/coding-assistant-aif-migration/
+
+
+============================================================
+PHASE 3 — DO NOT TOUCH CODE-SERVER
+============================================================
+
+Explicitly identify code-server resources.
+
+Save their names to:
+
+/root/coding-assistant-aif-migration/DO-NOT-TOUCH.txt
+
+
+Include:
+
+namespace
+
+Deployment
+
+Service
+
+PVC
+
+Ingress if separate
+
+ConfigMaps
+
+Secrets
+
+
+From this point onward:
+
+DO NOT modify any item in DO-NOT-TOUCH.txt.
+
+
+============================================================
+PHASE 4 — BACK UP CURRENT LITELLM STATE
+============================================================
+
+LiteLLM developer users and virtual keys MUST survive the migration.
+
+Identify the existing PostgreSQL database used by LiteLLM.
+
+Determine:
+
+POSTGRES_HOST
+
+POSTGRES_PORT
+
+POSTGRES_DB
+
+POSTGRES_USER
+
+
+Use the current password from existing Kubernetes Secret or
+/root/cred.txt.
+
+Create a PostgreSQL logical backup:
+
+/root/coding-assistant-aif-migration/litellm-db.sql
+
+Use pg_dump.
+
+Protect:
+
+chmod 600 
+/root/coding-assistant-aif-migration/litellm-db.sql
+
+
+Verify the dump is valid.
+
+Do NOT delete PostgreSQL.
+
+
+============================================================
+PHASE 5 — RECORD EXISTING LITELLM SETTINGS
+============================================================
+
+Preserve:
+
+model alias:
+
+qwen-coder
+
+existing virtual keys
+
+users
+
+teams if present
+
+usage data
+
+LITELLM_MASTER_KEY
+
+LITELLM_SALT_KEY
+
+DATABASE_URL
+
+vLLM upstream address
+
+any rate limits
+
+any key restrictions
+
+
+Save non-secret configuration to:
+
+/root/coding-assistant-aif-migration/litellm-current-config.yaml
+
+
+============================================================
+PHASE 6 — RECORD EXISTING VLLM SETTINGS
+============================================================
+
+Determine the exact current model.
+
+Expected:
+
+Qwen/Qwen2.5-Coder-7B-Instruct-AWQ
+
+
+Preserve:
+
+served model name:
+
+qwen-coder
+
+quantization:
+
+AWQ
+
+GPU count
+
+max model length
+
+GPU memory utilization
+
+max concurrent sequences
+
+dtype
+
+VLLM_API_KEY
+
+model cache PVC
+
+Hugging Face cache location
+
+
+Save configuration to:
+
+/root/coding-assistant-aif-migration/vllm-current-config.txt
+
+
+============================================================
+PHASE 7 — VERIFY SUSE AI FACTORY
+============================================================
+
+On Rancher local management cluster verify:
+
+SUSE AI Factory operator healthy
+
+SUSE AI Factory UI extension healthy
+
+AIWorkload CRD exists
+
+catalog is available
+
+coding-assistant cluster is available as a target cluster
+
+
+Check:
+
+kubectl get aiworkload -A
+
+kubectl get crd | grep -i aiworkload
+
+kubectl get pods -A | grep -Ei 'aif|ai-factory'
+
+kubectl get bundles.fleet.cattle.io -A
+
+
+Do NOT reinstall SUSE AI Factory.
+
+
+============================================================
+PHASE 8 — VERIFY APPS EXIST IN SUSE AI FACTORY
+============================================================
+
+Using the Rancher SUSE AI Factory UI verify that applications exist
+for:
+
+vLLM
+
+LiteLLM
+
+
+DO NOT create unrelated manually-managed chart repositories.
+
+Use the applications exposed by:
+
+SUSE AI Factory
+-> Apps / AI Library
+
+
+Record:
+
+vLLM app/chart version
+
+LiteLLM app/chart version
+
+
+Use the versions currently provided by SUSE AI Factory.
+
+
+============================================================
+PHASE 9 — INSPECT VLLM APP CONFIGURATION THROUGH UI
+============================================================
+
+Open in Rancher:
+
+SUSE AI Factory
+-> Apps / AI Library
+-> vLLM
+
+
+Choose:
+
+Install / Deploy
+
+
+Target cluster:
+
+coding-assistant
+
+
+Prefer namespace:
+
+suse-private-coder
+
+
+if that is the current coding assistant namespace.
+
+
+Before clicking Deploy:
+
+inspect the application's available configuration fields and YAML
+override editor.
+
+
+Configure it to reproduce the CURRENT working vLLM settings.
+
+
+Required logical configuration:
+
+Model:
+
+Qwen/Qwen2.5-Coder-7B-Instruct-AWQ
+
+
+Served model name:
+
+qwen-coder
+
+
+GPU:
+
+1
+
+
+Quantization:
+
+awq
+
+
+Context length:
+
+same as current deployment
+
+
+VLLM_API_KEY:
+
+same existing value
+
+
+Persistent model cache:
+
+reuse existing model cache PVC if the application supports an
+existing claim.
+
+
+If it cannot reuse the existing claim:
+
+create a new AI Factory-managed PVC but do NOT delete the old one.
+
+
+============================================================
+PHASE 10 — ENSURE VLLM SERVICE COMPATIBILITY
+============================================================
+
+The existing LiteLLM expects a vLLM service.
+
+Discover current service name.
+
+Prefer to configure the SUSE AI Factory vLLM application so that the
+resulting service name is compatible with the current internal
+architecture.
+
+
+If AI Factory creates a different Service name:
+
+DO NOT change code-server.
+
+DO NOT change external DNS.
+
+Only update LiteLLM upstream configuration to point to the new internal
+vLLM Service.
+
+
+No external vLLM Ingress is required.
+
+
+vLLM should remain:
+
+ClusterIP only.
+
+
+============================================================
+PHASE 11 — PREPARE VLLM CUTOVER
+============================================================
+
+Do not deploy while the old standalone vLLM Deployment would cause a
+GPU scheduling conflict.
+
+Prepare the AI Factory UI deployment completely first.
+
+
+When everything is ready:
+
+scale ONLY the current standalone vLLM Deployment to zero.
+
+
+Example logical action:
+
+kubectl scale deployment <OLD-VLLM> 
+  -n <CURRENT-NS> 
+  --replicas=0
+
+
+Do NOT delete it yet.
+
+
+Immediately deploy the vLLM application THROUGH:
+
+Rancher
+-> SUSE AI Factory
+-> Apps
+-> vLLM
+-> Deploy
+
+
+Target:
+
+coding-assistant
+
+
+============================================================
+PHASE 12 — VERIFY VLLM AI FACTORY WORKLOAD
+============================================================
+
+Monitor from Rancher UI:
+
+SUSE AI Factory
+-> Workloads
+
+
+Wait for vLLM to appear.
+
+
+Expected:
+
+Application:
+vLLM
+
+Cluster:
+coding-assistant
+
+Status:
+Ready
+
+
+Also verify:
+
+kubectl get aiworkload -A
+
+kubectl get pods -n <TARGET-NS>
+
+kubectl get svc -n <TARGET-NS>
+
+
+Do not continue until AI Factory reports vLLM Ready.
+
+
+============================================================
+PHASE 13 — TEST NEW VLLM
+============================================================
+
+Test inside Kubernetes.
+
+
+GET:
+
+/v1/models
+
+
+using the SAME:
+
+VLLM_API_KEY
+
+
+Expected model:
+
+qwen-coder
+
+
+Then test:
+
+POST /v1/chat/completions
+
+
+Prompt:
+
+Reply exactly:
+
+AIF_VLLM_OK
+
+
+Expected:
+
+AIF_VLLM_OK
+
+
+Confirm GPU utilization.
+
+
+============================================================
+PHASE 14 — LITELLM DATABASE STRATEGY
+============================================================
+
+The most important LiteLLM requirement is preservation of:
+
+developer virtual keys
+
+users
+
+master key
+
+salt key
+
+usage history
+
+
+Preferred strategy:
+
+reuse the CURRENT PostgreSQL database.
+
+
+Inspect the SUSE AI Factory LiteLLM app configuration in the UI.
+
+
+If it supports:
+
+external database
+
+existing DATABASE_URL
+
+existing PostgreSQL host
+
+
+configure it to use the current existing PostgreSQL database.
+
+
+This is the preferred option.
+
+
+Do NOT deploy a second PostgreSQL unnecessarily.
+
+
+============================================================
+PHASE 15 — FALLBACK DATABASE STRATEGY
+============================================================
+
+Only if the SUSE AI Factory LiteLLM app cannot use the current
+PostgreSQL database:
+
+allow its managed PostgreSQL to be created.
+
+
+Then restore:
+
+/root/coding-assistant-aif-migration/litellm-db.sql
+
+
+into the AI Factory-managed database.
+
+
+Use the SAME:
+
+LITELLM_MASTER_KEY
+
+LITELLM_SALT_KEY
+
+
+Verify developer virtual keys remain valid.
+
+
+Do not continue until this is confirmed.
+
+
+============================================================
+PHASE 16 — CONFIGURE LITELLM THROUGH SUSE AI FACTORY UI
+============================================================
+
+Open:
+
+Rancher
+-> SUSE AI Factory
+-> Apps / AI Library
+-> LiteLLM
+
+
+Select:
+
+Deploy
+
+
+Target cluster:
+
+coding-assistant
+
+
+Prefer namespace:
+
+suse-private-coder
+
+
+if supported and consistent with the existing installation.
+
+
+Configure:
+
+existing LITELLM_MASTER_KEY
+
+existing LITELLM_SALT_KEY
+
+existing database
+
+model alias:
+
+qwen-coder
+
+
+Provider/upstream:
+
+new AI Factory-managed vLLM Service
+
+
+Equivalent logical model configuration:
+
+model_list:
+
+  - model_name: qwen-coder
+
+    litellm_params:
+
+      model: hosted_vllm/qwen-coder
+
+      api_base:
+      http://<AI-FACTORY-VLLM-SERVICE>:8000/v1
+
+      api_key:
+      existing VLLM_API_KEY
+
+
+Do not hardcode secrets into non-secret ConfigMaps if the app provides
+Secret fields.
+
+
+============================================================
+PHASE 17 — PRESERVE EXTERNAL INGRESS
+============================================================
+
+Existing external endpoint MUST remain:
+
+https://api.aicodeassistant.demo.local
+
+
+DO NOT change DNS.
+
+
+DO NOT change TLS.
+
+
+DO NOT replace the certificate.
+
+
+DO NOT change Continue config.
+
+
+Identify the existing Ingress backend.
+
+
+Preferred result:
+
+existing Ingress
+    ->
+Service named litellm
+    ->
+AI Factory-managed LiteLLM
+
+
+If the SUSE AI Factory LiteLLM deployment creates the SAME service
+name currently used by the Ingress:
+
+leave the Ingress completely untouched.
+
+
+============================================================
+PHASE 18 — IF SERVICE NAME IS DIFFERENT
+============================================================
+
+The external Ingress still must remain unchanged if possible.
+
+
+Instead of modifying DNS or Continue:
+
+create a small compatibility ClusterIP Service with the OLD service
+name.
+
+
+Example logical architecture:
+
+existing Ingress
+    ->
+old service name: litellm
+    ->
+selectors matching AI Factory-managed LiteLLM pods
+
+
+Use this only if required.
+
+
+Prefer a Service alias/compatibility layer over editing:
+
+DNS
+
+TLS
+
+Continue
+
+code-server
+
+
+Do not create another public endpoint.
+
+
+============================================================
+PHASE 19 — LITELLM CUTOVER
+============================================================
+
+Prepare the AI Factory LiteLLM configuration first.
+
+
+When ready:
+
+scale ONLY the standalone LiteLLM Deployment to zero.
+
+
+Do NOT stop PostgreSQL if it is being reused.
+
+
+Do NOT delete developer keys.
+
+
+Then deploy LiteLLM THROUGH:
+
+Rancher
+-> SUSE AI Factory
+-> Apps
+-> LiteLLM
+
+
+Target cluster:
+
+coding-assistant
+
+
+============================================================
+PHASE 20 — VERIFY LITELLM AI FACTORY WORKLOAD
+============================================================
+
+Rancher:
+
+SUSE AI Factory
+-> Workloads
+
+
+Expected:
+
+vLLM     Ready
+LiteLLM  Ready
+
+
+Both target:
+
+coding-assistant
+
+
+Also verify:
+
+kubectl get aiworkload -A
+
+
+Both must have operator-generated Ready status.
+
+
+Do NOT manually patch AIWorkload status.
+
+
+============================================================
+PHASE 21 — TEST SAME DEVELOPER KEY
+============================================================
+
+Use the EXISTING developer01 virtual key from:
+
+/root/cred.txt
+
+
+Do NOT create a replacement key for this test.
+
+
+Test:
+
+https://api.aicodeassistant.demo.local/v1/models
+
+
+Expected:
+
+qwen-coder
+
+
+Then:
+
+POST:
+
+https://api.aicodeassistant.demo.local/v1/chat/completions
+
+
+with:
+
+existing developer key
+
+model:
+
+qwen-coder
+
+
+Prompt:
+
+Reply exactly:
+
+AIF_LITELLM_OK
+
+
+Expected:
+
+AIF_LITELLM_OK
+
+
+============================================================
+PHASE 22 — VERIFY EXISTING CONTINUE CONFIG
+============================================================
+
+Inspect:
+
+/home/coder/.continue/config.yaml
+
+
+DO NOT MODIFY IT.
+
+
+Verify it still contains logically:
+
+name:
+SUSE Private Coding Assistant
+
+model:
+qwen-coder
+
+apiBase:
+https://api.aicodeassistant.demo.local/v1
+
+apiKey:
+existing developer LiteLLM virtual key
+
+
+The configuration should continue working without modification.
+
+
+============================================================
+PHASE 23 — END-TO-END CODE-SERVER TEST
+============================================================
+
+Do not restart code-server.
+
+
+Open/use the existing code-server.
+
+
+Use Continue.
+
+
+Send:
+
+Write a Python function that returns the Fibonacci sequence.
+
+
+Request flow must now be:
+
+code-server
+    ->
+Continue
+    ->
+existing Ingress
+    ->
+AI Factory-managed LiteLLM
+    ->
+AI Factory-managed vLLM
+    ->
+Qwen
+
+
+Confirm a valid coding response is returned.
+
+
+============================================================
+PHASE 24 — VERIFY NOTHING ELSE CHANGED
+============================================================
+
+Compare before/after.
+
+
+Verify:
+
+code-server pod unchanged
+
+code-server PVC unchanged
+
+workspace unchanged
+
+Continue config unchanged
+
+DNS unchanged
+
+TLS unchanged
+
+Ingress hostname unchanged
+
+developer virtual key unchanged
+
+API endpoint unchanged
+
+
+============================================================
+PHASE 25 — CLEAN UP OLD STANDALONE WORKLOADS
+============================================================
+
+ONLY AFTER the entire end-to-end test passes:
+
+delete the OLD standalone:
+
+vLLM Deployment
+
+LiteLLM Deployment
+
+
+Do NOT delete:
+
+code-server
+
+Ingress
+
+TLS
+
+PostgreSQL if AI Factory LiteLLM is using it
+
+PVC containing required DB data
+
+model cache PVC if still useful
+
+developer credentials
+
+
+If old vLLM/LiteLLM resources contain PVCs that are no longer used,
+leave them intact initially.
+
+
+Do not destroy rollback data during the migration.
+
+
+============================================================
+PHASE 26 — FINAL AI FACTORY UI VALIDATION
+============================================================
+
+In Rancher Prime confirm:
+
+SUSE AI Factory
+-> Workloads
+
+
+shows exactly the relevant managed applications:
+
+
+vLLM
+Cluster:
+coding-assistant
+Status:
+Ready
+
+
+LiteLLM
+Cluster:
+coding-assistant
+Status:
+Ready
+
+
+Opening each workload should show it as a SUSE AI Factory-managed
+application.
+
+
+============================================================
+FINAL ACCEPTANCE CRITERIA
+============================================================
+
+Do NOT report success until all are true:
+
+
+[ ] coding-assistant downstream cluster unchanged
+
+
+[ ] code-server was not modified
+
+
+[ ] code-server workspace unchanged
+
+
+[ ] Continue config unchanged
+
+
+[ ] existing external DNS unchanged
+
+
+[ ] existing TLS unchanged
+
+
+[ ] existing API hostname unchanged
+
+
+[ ] developer virtual keys preserved
+
+
+[ ] existing LiteLLM master key preserved
+
+
+[ ] existing LiteLLM salt key preserved
+
+
+[ ] PostgreSQL developer/user/key data preserved
+
+
+[ ] Qwen model remains the same
+
+
+[ ] served model alias remains qwen-coder
+
+
+[ ] vLLM was deployed via SUSE AI Factory UI
+
+
+[ ] LiteLLM was deployed via SUSE AI Factory UI
+
+
+[ ] vLLM appears under SUSE AI Factory Workloads
+
+
+[ ] LiteLLM appears under SUSE AI Factory Workloads
+
+
+[ ] vLLM status = Ready
+
+
+[ ] LiteLLM status = Ready
+
+
+[ ] /v1/models returns qwen-coder
+
+
+[ ] same developer virtual key works
+
+
+[ ] Continue can generate code
+
+
+[ ] no new public endpoint was introduced
+
+
+============================================================
+ROLLBACK
+============================================================
+
+If migration fails:
+
+DO NOT change Continue.
+
+
+DO NOT change DNS.
+
+
+DO NOT change code-server.
+
+
+Scale down failed AI Factory workload.
+
+
+Restore old standalone Deployment replicas:
+
+
+old vLLM -> replicas=1
+
+old LiteLLM -> replicas=1
+
+
+Because Ingress, credentials and PostgreSQL were preserved, the old
+coding assistant should immediately become functional again.
+
+
+Do not delete the old standalone resources until the new deployment
+passes every validation test.
+
+
+============================================================
+FINAL REPORT
+============================================================
+
+Print:
+
+Target Rancher cluster:
+coding-assistant
+
+
+Migration mode:
+SUSE AI Factory UI
+
+
+Code-server:
+UNCHANGED
+
+
+Continue:
+UNCHANGED
+
+
+DNS:
+UNCHANGED
+
+
+Ingress:
+UNCHANGED
+or
+UNCHANGED + compatibility Service used
+
+
+TLS:
+UNCHANGED
+
+
+LiteLLM database:
+EXISTING DATABASE REUSED
+or
+DATABASE RESTORED
+
+
+Developer keys:
+PRESERVED
+
+
+vLLM workload:
+Ready / Failed
+
+
+LiteLLM workload:
+Ready / Failed
+
+
+SUSE AI Factory Workloads:
+
+vLLM    <status>
+
+LiteLLM <status>
+
+
+External API:
+
+https://api.aicodeassistant.demo.local/v1
+
+
+Model:
+
+qwen-coder
+
+
+Existing developer key test:
+
+PASS / FAIL
+
+
+Continue coding test:
+
+PASS / FAIL
+
+
+DO NOT print the complete secret values.
+
+
+The migration is complete ONLY if:
+
+Rancher
+-> SUSE AI Factory
+-> Workloads
+
+shows both:
+
+vLLM     Ready
+
+LiteLLM  Ready
+
+on cluster:
+
+coding-assistant
+
+AND the existing code-server Continue assistant still works without
+changing its configuration.
