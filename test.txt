@@ -1,744 +1,518 @@
-# PROJECT: SUSE AI Factory — Private Agentic HRMS on Rancher Downstream Cluster
+# SUSE OBSERVABILITY — COMPLETE PREFLIGHT AND INSTALLATION
 
-## YOUR ROLE
+You are acting as a Senior SUSE Observability, Rancher Prime, RKE2, Longhorn, Kubernetes Storage, Networking, and TLS Engineer.
 
-You are a Senior SUSE AI Factory Architect, Rancher/RKE2 Kubernetes Engineer, NVIDIA AI Infrastructure Engineer, and Full-Stack AI Application Developer.
+I have already installed Codex on my Rancher Management VM.
 
-Your responsibility is to deploy, configure, integrate, troubleshoot, and validate a complete **SUSE Private Agentic HRMS** application on my existing Rancher-managed downstream Kubernetes cluster.
+Your job is to connect to my existing Rancher-managed downstream cluster named **observability**, inspect its complete environment, validate every requirement, safely fix non-destructive configuration issues, and install SUSE Observability Server only when the mandatory preflight checks have passed.
 
-**Execute the work. Do not merely provide commands or documentation.**
+Do not merely provide an installation guide. Execute the tasks you can perform, validate every action, and give factual results.
 
-Work phase by phase, validate every deployment, fix errors, and deliver a fully functioning demonstration.
+## 1. Environment and strict cluster separation
 
----
+### Rancher Management VM
 
-# 1. INFRASTRUCTURE — READ CAREFULLY
+This is where Codex is currently running.
 
-There are TWO separate environments.
+Use this VM for:
+- Rancher API access
+- Kubernetes administration using the downstream kubeconfig
+- Helm commands
+- Preflight scripts
+- Generating Kubernetes manifests and configuration
+- Running validation tests
+- Preparing reports
 
-## A. Rancher Management VM
+**Never install SUSE Observability Server, Longhorn, cert-manager, Ingress Controller, or application workloads in Rancher's `local` management cluster.**
 
-This is the machine where you (Codex) are running.
+Do not modify Rancher management components unless a specific change is required for future integration and I have explicitly authorized it.
 
-It contains:
+### Target downstream cluster
 
-- Rancher Prime management interface
-- SUSE AI Factory extension
-- Rancher management components
-- Existing source ZIP: `suse-private-hr-agent-gpu-v3.zip`
-- Codex and development tools
+- Rancher cluster name: `observability`
+- Cluster type: RKE2
+- Node count: 1
+- Approximate CPU: 32 vCPU
+- Approximate RAM: 47 GB
+- Longhorn disk: approximately 400 GB at `/home/longhorn`
+- Desired SUSE Observability sizing: `10-nonha`
+- Namespace: `suse-observability`
+- Required UI: `https://observability.demo.local`
+- DNS record: Already configured
+- TLS: cert-manager-managed private CA certificate
+- Purpose: Lightweight central observability lab
 
-The source ZIP is already present on this management VM. Locate it before proceeding.
+This server will eventually monitor five downstream Kubernetes clusters, four of which have NVIDIA GPUs.
 
-**The Rancher management VM is your development and deployment workstation.**
+**Important: This task covers only the SUSE Observability Server installation. Do NOT install any Observability Agents in the other clusters yet. Do NOT modify those five clusters.**
 
-You can build application images here, use the Rancher API, access the Rancher UI if browser tooling is available, and manage the downstream cluster using its authorized Kubernetes context.
+## 2. Mandatory execution rules
 
-Do not deploy HRMS, vLLM, Milvus, LiteLLM, MCP, or application containers to the Rancher local/management cluster.
+1. Never use the currently selected kubeconfig blindly.
+2. Locate the Rancher downstream cluster `observability` and obtain its authorized kubeconfig.
+3. Confirm actual cluster identity before every write operation.
+4. Prefer a dedicated kubeconfig file and explicit `--kubeconfig` and `--context` flags in deployment scripts.
+5. Do not use Rancher `local` as the deployment target.
+6. Do not create a new RKE2 cluster.
+7. Do not reinstall healthy existing components.
+8. Do not delete or modify existing PVCs/PVs.
+9. Do not modify the default StorageClass globally.
+10. Do not run destructive cleanup commands.
+11. Do not disable TLS verification.
+12. Do not use fake or placeholder credentials for actual installation.
+13. Do not put license keys, passwords or private keys into logs or Git.
+14. Stop installation if a critical requirement cannot be fulfilled safely.
+15. After safe remediation, rerun failed checks before proceeding.
+16. Use official SUSE documentation and inspect actual chart values rather than assuming Helm configuration field names.
+17. Preserve unrelated namespaces and workloads.
 
-Existing Rancher management components must remain untouched.
+## PHASE 1 — Rancher access and Kubernetes context discovery
 
-## B. Rancher Downstream Cluster — Actual Application Environment
+From the Rancher Management VM:
 
-| Parameter | Value |
-|---|---|
-| Rancher downstream cluster name | `agentic-ai` |
-| Downstream node IP | `192.168.1.15` |
-| Application domain | `agenticai.demo.local` |
-| Application URL | `https://agenticai.demo.local` |
-| Operating system | SLES |
-| Kubernetes | RKE2 |
-| GPU | NVIDIA GPU |
-| GPU memory target | Approximately 16 GB — verify |
-| AI platform | SUSE AI Factory |
-| TLS management | cert-manager |
-| Ingress | Existing compatible Ingress Controller |
-| Persistent storage | Existing downstream StorageClass |
+- Identify the currently configured Rancher server.
+- Find downstream cluster named exactly `observability`.
+- Determine its actual Rancher cluster ID.
+- Obtain or locate its kubeconfig using authorized credentials.
+- Verify API connectivity.
+- Verify Kubernetes server version.
+- Verify node name and internal/external IP.
+- Verify node readiness and scheduling conditions.
+- Inspect node taints and events.
+- Verify node OS and architecture.
+- Verify the real cluster is not Rancher `local`.
 
-**ALL AI and HRMS application workloads must be deployed on the downstream cluster `agentic-ai`.**
+Use read-only checks such as:
 
-Rancher is the management interface, not the application execution environment.
-
-Before any write operation, explicitly verify the Kubernetes context and cluster identity. Never accidentally apply manifests to Rancher's local cluster.
-
----
-
-# 2. TARGET ARCHITECTURE
-
-Implement the following architecture:
-
-```text
-                   RANCHER MANAGEMENT VM
-              ┌──────────────────────────────┐
-              │ Rancher Prime                │
-              │ SUSE AI Factory Extension    │
-              │ Codex + Application ZIP      │
-              └──────────────┬───────────────┘
-                             │
-                       Manage / Deploy
-                             │
-                             ▼
-                DOWNSTREAM CLUSTER: agentic-ai
-                        192.168.1.15
-
-      ┌────────────────────────────────────────────┐
-      │ SUSE AI Factory Managed Workloads          │
-      │                                            │
-      │  vLLM → Qwen Model → NVIDIA GPU            │
-      │  Milvus → HR Policy Vector Database        │
-      └──────────────────────┬─────────────────────┘
-                             │
-      ┌──────────────────────┴─────────────────────┐
-      │ Custom HRMS Application Workloads          │
-      │                                            │
-      │  FastAPI Agent Orchestrator                │
-      │  Employee + Manager Web UI                 │
-      │  LiteLLM Gateway                           │
-      │  MCP Server → HRMS SQLite Database         │
-      │  HR Policy Ingestion                       │
-      │                                            │
-      │  All deployed through Rancher/Kubernetes   │
-      └──────────────────────┬─────────────────────┘
-                             │
-      ┌──────────────────────┴─────────────────────┐
-      │ cert-manager + Ingress + HTTPS             │
-      │ agenticai.demo.local → 192.168.1.15        │
-      └──────────────────────┬─────────────────────┘
-                             │
-                             ▼
-                  Employee / Manager Browser
+```bash
+kubectl config get-contexts
+kubectl cluster-info
+kubectl get nodes -o wide
+kubectl describe nodes
+kubectl get namespaces
+kubectl get events -A --sort-by=.lastTimestamp
 ```
 
-Target namespace layout:
+Use the verified downstream context for all commands.
 
-- `ai-runtime`: vLLM and Milvus, managed by SUSE AI Factory
-- `hr-agentic`: FastAPI, UI, MCP, SQLite, LiteLLM, policy ingestion and TLS Secret
-- cert-manager namespace: use the existing deployment if available
-- Ingress Controller: use the existing supported controller
+Save a safe cluster identity record in the deployment report.
 
-Adjust namespace names only if the installed SUSE AI Factory requires it. Document the actual namespaces.
+Acceptance:
+- Correct downstream cluster identified
+- API reachable
+- Node Ready
+- Node schedulable
+- No critical DiskPressure or MemoryPressure
+- No blocking admission webhook failures
 
----
+## PHASE 2 — CPU, RAM, disk and Longhorn validation
 
-# 3. CRITICAL DEPLOYMENT RULES
+Inspect actual node allocatable resources, not only advertised VM specifications.
 
-1. Do not install another RKE2 cluster.
-2. Do not install duplicate NVIDIA GPU Operators.
-3. Deploy vLLM and Milvus **through the Rancher SUSE AI Factory extension**, targeting `agentic-ai`.
-4. Do not independently install vLLM or Milvus through the old application scripts.
-5. Verify both AI applications appear in SUSE AI Factory Workloads with their actual status.
-6. Deploy all remaining HRMS components directly to the `agentic-ai` downstream cluster using Rancher/Kubernetes.
-7. Never deploy HRMS or AI application workloads to Rancher's local cluster.
-8. Preserve existing persistent data and active infrastructure.
-9. Do not delete PVCs, PVs, databases, or active Rancher components.
-10. Do not fabricate agent traces, service readiness, GPU utilization, or AI Factory workload status.
-11. Do not expose SQLite, Milvus, MCP or vLLM externally.
-12. Use real Kubernetes service DNS for internal communication.
-13. Make deployment scripts idempotent and safe to rerun.
-14. If a destructive operation is necessary, explain its impact and request approval first.
+Check:
+- Node allocatable CPU and memory
+- Existing workload resource requests
+- Available CPU and RAM headroom
+- Current system pods and their requirements
+- Actual disk mounts and filesystems
+- `/home/longhorn` backing filesystem
+- Longhorn configured default data path
+- Available storage capacity
+- Longhorn reserved capacity
+- Longhorn available schedulable storage
+- Existing Longhorn volumes and current storage consumption
+- PVCs and PVs
+- StorageClasses and replica settings
+- Longhorn CSI driver and provisioners
+- Longhorn node/disk health
+- Disk type and performance characteristics
 
----
+Verify that the 400 GB disk is actually used by Longhorn.
 
-# PHASE 1 — DISCOVERY AND VALIDATION
+Do not infer this only from the existence of the directory `/home/longhorn`.
 
-Perform an infrastructure assessment from the Rancher Management VM.
+### Storage requirements
 
-Identify:
+Preferred installation profile: `10-nonha`.
 
-- Rancher server and downstream cluster identity
-- Downstream kubeconfig and context
-- Node status and resource availability
-- SLES version
-- RKE2 version
-- GPU hardware and actual available VRAM
-- GPU Operator status
-- StorageClasses and available disk capacity
-- Existing Ingress Controller and IngressClass
-- Existing cert-manager deployment
-- SUSE AI Factory extension and operator status
-- SUSE AI Factory version
-- Available SUSE AI Factory application charts
-- Existing namespaces and workloads
-- Existing container registry options
-- Network access between management VM and downstream cluster
+The published default persistent storage requirement is approximately 335 GiB.
 
-Verify the actual node has enough disk space and memory.
+Check whether the actual usable Longhorn capacity can safely accommodate the required PVCs with sufficient free-space headroom.
 
-If the downstream cluster has DiskPressure, broken storage, unavailable GPU resources, or admission webhook failures, diagnose and repair those before deploying applications.
+This is a single-node lab, so there are no independent failure domains for Longhorn replica redundancy.
 
-**Acceptance:** The correct downstream cluster is Ready, schedulable, and accessible from the management VM.
+A dedicated single-replica StorageClass may be used only if technically compatible, with the data-loss risk clearly documented.
 
----
+Do not change existing volumes to one replica.
 
-# PHASE 2 — SUSE AI FACTORY: MILVUS
+If default PVC allocations do not fit:
+- Review the official SUSE Observability storage customization documentation.
+- Inspect actual chart-supported storage overrides.
+- Investigate documented shorter-retention configurations suitable for a short-lived lab.
+- Model the required PVC capacities before creating anything.
+- Keep reasonable free-space headroom for Longhorn and database growth.
+- Do not arbitrarily shrink critical database PVCs.
+- Do not switch to a smaller profile silently.
+- If a safe 10-nonha storage configuration cannot be established, report the blocker and stop before server installation.
 
-Use the existing Rancher UI and SUSE AI Factory extension.
+The `10-nonha` profile must remain the preferred choice unless I explicitly approve changing it.
 
-Deploy Milvus to:
+Record that this single-node Longhorn arrangement is lab-only and does not provide the durable multi-node storage configuration recommended by SUSE.
 
-- Cluster: `agentic-ai`
-- Namespace: `ai-runtime`, where supported
-- Mode: Standalone for the demo
-- Storage: Persistent PVC
-- Exposure: Internal Kubernetes Service only
+Acceptance:
+- Sufficient allocatable CPU and memory
+- Longhorn healthy
+- Compatible StorageClass
+- Storage requirements calculated
+- All projected PVCs can be provisioned
+- Adequate free capacity remains
 
-Use realistic small-lab storage sizes.
+## PHASE 3 — Network, DNS, ingress and TLS prerequisites
 
-Do not accept unnecessarily large default MinIO or object-storage PVC allocations without reviewing the available physical storage.
+Required UI endpoint:
 
-Use the chart version and configuration supported by the installed SUSE AI Factory.
+`https://observability.demo.local`
 
-If Milvus is not available in the installed AI Factory catalog, explicitly report the blocker. Do not silently substitute standalone Helm installation and claim AI Factory ownership.
-
-After deployment verify:
-
-- Milvus workload is visible in SUSE AI Factory
-- Workload is Ready
-- Pods are healthy
-- PVCs are Bound
-- Milvus gRPC endpoint is accessible
-- Internal Service DNS is resolvable
-
-Record the actual Service hostname and port.
-
----
-
-# PHASE 3 — SUSE AI FACTORY: vLLM
-
-Use SUSE AI Factory extension to deploy vLLM on the same `agentic-ai` cluster.
-
-Inspect GPU capacity before selecting a model.
-
-If the available GPU memory is approximately 16 GB, start with:
-
-- Model: `Qwen/Qwen2.5-3B-Instruct`
-- Context length: 4096
-- GPU count: 1
-- GPU memory utilization: approximately 0.70
-- Served model name: `hr-llm`, if configurable
-- Enable automatic tool selection and a compatible tool parser supported by the actual vLLM runtime
-
-If the available memory is 48 GB or higher, evaluate whether the existing Qwen2.5-14B configuration is suitable.
-
-The model must support reliable tool calling because the HRMS application uses MCP tools.
-
-Do not assume a model is suitable merely because it loads successfully.
-
-Validate actual tool-call response formatting.
+The DNS record already exists.
 
 Verify:
+- DNS resolution from Rancher Management VM
+- DNS resolution from the downstream cluster
+- Resolved IP belongs to the intended downstream ingress endpoint
+- Downstream ingress network accessibility
+- TCP 80/443 connectivity where required
+- Existing ingress controller
+- IngressClass and controller version
+- Existing host/path conflicts
+- cert-manager installation status
+- cert-manager CRDs and webhook health
+- Available internal DNS access for future agents
+- Rancher Management VM connectivity to the future Observability URL
 
-- SUSE AI Factory lists the vLLM workload
-- Model deployment becomes Ready
-- GPU is allocated to vLLM
-- Model weights load successfully
-- `/v1/models` responds
-- `/v1/chat/completions` responds
-- Tool calling works
-- Actual inference uses the NVIDIA GPU
+Do not create a duplicate ingress controller.
 
-Record the real internal endpoint and served model identifier.
+If no ingress controller exists, install a compatible supported controller only in the `observability` downstream cluster.
 
-**Important:** I want vLLM and Milvus visible and trackable in SUSE AI Factory Workloads.
+Avoid conflicts with existing RKE2 ingress components.
 
-If the extension requires manual UI interaction that cannot be completed with available tools, provide the exact UI steps, let me complete that operation, and then continue integrating and validating the resulting services. Do not replace this with an unmanaged deployment.
+### TLS requirements
 
----
+Use cert-manager to manage a private CA and leaf certificate.
 
-# PHASE 4 — APPLICATION SOURCE AND CONTAINER IMAGES
+If cert-manager is already healthy, reuse it.
 
-Locate and extract:
+Otherwise, install a currently compatible cert-manager release in the downstream cluster.
 
-`suse-private-hr-agent-gpu-v3.zip`
+Create:
+- Bootstrap self-signed Issuer
+- Private CA Certificate
+- CA Issuer
+- TLS Certificate for `observability.demo.local`
+- TLS Secret in namespace `suse-observability`
 
-Inspect the complete codebase before modifications.
+The certificate must contain the exact DNS SAN `observability.demo.local`.
 
-Retain and reuse:
+Configure automatic certificate renewal.
 
-- Employee Portal
-- Manager Portal
-- FastAPI Agent backend
-- Live Agent Flow implementation
-- MCP server
-- SQLite HRMS database
-- Policy ingestion scripts
-- LiteLLM configuration
-- Existing role authentication
-- Existing sample employee and policy data
+Do not export the private CA key.
 
-Modify the deployment configuration so it uses **AIF-managed vLLM and Milvus**.
+Export only the public CA certificate for trusted clients.
 
-Remove vLLM/Milvus manifests from the active custom application installation sequence.
+Plan for:
+- Windows browser CA trust
+- Rancher UI extension CA trust
+- Future Observability Agent CA trust
 
-Do not delete source templates unless necessary.
+Do not modify Rancher management-cluster CA configuration during this task without explicit approval.
 
-## Container build approach
+Acceptance:
+- Correct DNS resolution
+- Ingress/controller connectivity available
+- cert-manager healthy or safely installable
+- TLS issuance mechanism verified
+- No hostname conflict
 
-Build custom HR Agent and MCP images on the Rancher Management VM.
+## PHASE 4 — SUSE Observability software prerequisites
 
-Prefer a container registry reachable from the downstream cluster.
+Verify all installation prerequisites.
 
-If a registry exists:
+Check:
+- Helm installed and supported version, minimum 3.13.1
+- Correct chart repository reachability
+- Access to required container registries
+- Kubernetes version compatibility
+- Rancher version compatibility
+- RBAC permissions
+- Storage provisioner availability
+- SLES/RKE2 compatibility
+- Network policies
+- Cluster resource quotas
+- Existing Helm installations
+- Whether SUSE Observability is already installed
+- Required license availability
+- Administrator credentials availability
 
-1. Build images.
-2. Tag with versioned tags.
-3. Push images.
-4. Configure downstream image pull.
-5. Deploy using the pushed images.
+Official Helm repository:
 
-If there is no registry:
+```bash
+helm repo add suse-observability \
+  https://charts.rancher.com/server-charts/prime/suse-observability
 
-1. Build images on the management VM.
-2. Transfer/import them only into downstream RKE2 containerd.
-3. Avoid unnecessary intermediate TAR files.
-4. Verify images are available on the correct downstream node.
-5. Clean unused build cache safely after successful rollout.
-
-Do not import application images into Rancher's local cluster containerd.
-
-Do not assume the management VM and downstream node share the same filesystem.
-
-Minimize Docker and containerd duplicated storage.
-
----
-
-# PHASE 5 — HRMS, MCP AND SQLITE
-
-Deploy all remaining application components into `hr-agentic` on downstream `agentic-ai`.
-
-## HRMS Database
-
-Use SQLite for this demo.
-
-Requirements:
-
-- Persistent PVC
-- Sample employee and manager records
-- Leave balances
-- Holiday calendar
-- Leave requests
-- Approval/rejection status
-- Decision audit trail
-- Idempotent initialization
-- Database persistence across pod restarts
-
-Do not use CSV as the active transactional database.
-
-CSV/JSON files are only sample seed data.
-
-## MCP Server
-
-Deploy the existing Python MCP server.
-
-Verify real HRMS tools:
-
-- `get_employee_profile`
-- `get_leave_balance`
-- `get_holiday_calendar`
-- `submit_leave_request`
-
-Ensure the manager approval workflow uses authenticated backend/database operations.
-
-All MCP calls must return data from the actual SQLite database.
-
-The MCP service must remain internal to Kubernetes.
-
-## Agent Backend
-
-Deploy FastAPI and LiteLLM.
-
-Configure:
-
-- Milvus internal endpoint
-- MCP internal endpoint
-- LiteLLM endpoint
-- AIF-managed vLLM endpoint
-- Actual served model name
-- Authentication secrets
-- SQLite connection
-- Session configuration
-
-Use Kubernetes Service DNS for all internal connections.
-
-Do not use the external HTTPS domain for pod-to-pod communication.
-
----
-
-# PHASE 6 — EMPLOYEE AND MANAGER PORTAL
-
-Implement the approved v3 SUSE-styled UI.
-
-Use a clean sidebar/navigation layout.
-
-Required sections:
-
-- Dashboard
-- Employee Portal
-- AI Assistant
-- Live Agent Flow
-- Architecture
-- Source Data
-- My Requests
-- Manager Review
-
-Keep NVIDIA hardware wording generic as **NVIDIA GPU**.
-
-Use **SLES**, not Ubuntu, in platform descriptions.
-
-Do not add unofficial SUSE logos.
-
-## Employee Login
-
-The employee should:
-
-1. Select their employee identity.
-2. Log in.
-3. View their own HR profile.
-4. View annual and sick leave balances.
-5. Ask HR policy questions.
-6. See AI answers with sources.
-7. See the actual live agent flow.
-8. Submit a leave request.
-9. Track Pending, Approved and Rejected requests.
-
-## Manager Login
-
-The manager should:
-
-1. Log in separately.
-2. View direct reports.
-3. See pending leave requests.
-4. Select an employee request.
-5. Ask the AI to evaluate the request.
-6. See relevant policy and actual leave balance.
-7. View the real agent execution flow.
-8. Approve or reject the request.
-9. Record the decision in SQLite.
-10. Make the updated request status visible to the employee.
-
-For this isolated private demo, the previously selected password `1234` can be used for both roles if requested, but store it using the application's supported hashed-password mechanism and restrict external access. Ensure server-side role authorization.
-
-Do not place passwords in JavaScript or Git-tracked files.
-
----
-
-# PHASE 7 — REAL AGENTIC EXECUTION FLOW
-
-This is one of the most important requirements.
-
-When an employee asks:
-
-"How many annual leave days do I have remaining?"
-
-Show the real execution flow:
-
-```text
-Employee UI
-    ↓
-FastAPI Agent Orchestrator
-    ↓
-Milvus HR Policy Retrieval
-    ↓
-LLM Tool Selection
-    ↓
-MCP Server
-    ↓
-SQLite HRMS Database
-    ↓
-HRMS Tool Result
-    ↓
-LiteLLM / AIF-managed vLLM
-    ↓
-NVIDIA GPU Inference
-    ↓
-Grounded Answer + Policy Citations
+helm repo update
 ```
 
-Adapt ordering to the actual runtime calls; do not imply every question follows an identical fixed sequence.
+Inspect the chart:
 
-The Live Agent Flow must display:
+```bash
+helm search repo suse-observability/suse-observability
+helm show chart suse-observability/suse-observability
+helm show values suse-observability/suse-observability
+```
 
-- Actual step name
-- Tool/service used
-- Execution status
-- Start and completion timestamps
-- Real execution duration
-- Sanitized request details
-- Tool result summary
-- Policy evidence
-- Error information
+Inspect the actual chart version, default PVCs, storage override keys, ingress schema, services, resource requirements and installed dependencies.
 
-Use actual server-side events via SSE or equivalent streaming.
+Use the modern `global.suseObservability` configuration if supported by the selected chart version.
 
-Do not use fake timestamps or hardcoded completed steps.
+Get the license securely from an already authorized source or request it from me. Do not invent a license.
 
-The Architecture page should separately show the deployed service topology and connections.
+Generate or securely obtain a strong administrator password. Do not use `1234`.
 
-The Source Data page should explain the difference between Milvus policy vectors and SQLite HRMS records.
+Do not print credentials into terminal logs, reports or shell history.
 
----
+### Helm preflight
 
-# PHASE 8 — LEAVE APPROVAL WORKFLOW
+Prepare candidate values for:
 
-Implement and validate the complete process.
+- `global.suseObservability.license`
+- `global.suseObservability.baseUrl`
+- `global.suseObservability.sizing.profile`
+- `global.suseObservability.adminPassword` or `adminPasswordBcrypt`
+- `global.storageClass`
+- Chart-supported ingress configuration
+- Chart-supported storage tuning, if necessary
 
-### Employee
+Render all manifests locally with `helm template`.
 
-Employee selects leave dates and submits a request.
+Inspect:
+- Workload resource requests and limits
+- Total PVC requests
+- Expected StorageClasses
+- Service names and ports
+- Ingress host and TLS Secret
+- Scheduling constraints
+- StatefulSets
+- Secrets and permissions
+- All chart validation errors
 
-The application must:
+Do not install at this phase.
 
-- Check dates.
-- Retrieve relevant policies.
-- Calculate working days.
-- Account for configured holidays.
-- Verify employee identity.
-- Save the request in SQLite as `PENDING`.
-- Leave the employee's balance unchanged until approval.
+## PHASE 5 — Formal preflight GO/NO-GO
 
-### Manager
+Create the report:
 
-Manager opens the pending request.
+`/root/observability-deployment/PREFLIGHT_REPORT.md`
 
-AI should:
+Include this checklist with actual observed values and evidence:
 
-- Retrieve relevant leave policy from Milvus.
-- Query HRMS leave balance through MCP.
-- Check holiday calendar.
-- Calculate eligible days.
-- Explain whether the request appears compliant.
-- Provide evidence and policy citations.
+| Check | Actual value | PASS/FAIL | Explanation |
+|---|---|---|---|
+| Correct cluster | | | |
+| API access | | | |
+| Node Ready | | | |
+| RKE2 compatibility | | | |
+| CPU available | | | |
+| Memory available | | | |
+| Longhorn disk | | | |
+| Longhorn usable capacity | | | |
+| Projected PVC usage | | | |
+| StorageClass | | | |
+| DNS | | | |
+| Ingress Controller | | | |
+| cert-manager | | | |
+| Helm | | | |
+| SUSE chart repository | | | |
+| Container registry | | | |
+| License | | | |
+| Admin credentials | | | |
+| Rendered Helm manifests | | | |
 
-The manager must manually choose:
+Every check must have factual evidence.
 
-- Approve
-- Reject
+If a prerequisite is missing:
+- Diagnose the reason.
+- Safely remediate it where possible.
+- Rerun the check.
+- If unresolved, mark NO-GO and stop installation.
 
-On approval:
+For destructive operations or changes to Rancher management resources, request my approval.
 
-- Update request status.
-- Deduct correct leave days once.
-- Record approving manager and timestamp.
-- Update employee balance.
-- Record audit history.
+**Only proceed to SUSE Observability Server installation when all mandatory installation checks are PASS.**
 
-On rejection:
+## PHASE 6 — Deploy SUSE Observability Server
 
-- Change request status.
-- Do not deduct leave.
-- Save manager decision.
+Target cluster:
 
-Prevent duplicate approvals, unauthorized access, and double balance deductions.
+`observability`
 
-AI must never approve a request automatically.
+Namespace:
 
----
+`suse-observability`
 
-# PHASE 9 — CERT-MANAGER AND HTTPS
+Helm release:
 
-Required external URL:
+`suse-observability`
 
-`https://agenticai.demo.local`
+Preferred profile:
 
-Downstream node:
+`10-nonha`
 
-`192.168.1.15`
+Public URL:
 
-All TLS and Ingress resources must run on downstream `agentic-ai`.
+`https://observability.demo.local`
 
-## TLS
+Create the namespace in the verified downstream context.
 
-Check whether cert-manager already exists.
+Use the official SUSE Observability Helm chart.
 
-If it does, reuse it.
+Use the latest compatible stable chart verified during preflight, not an unverified chart version.
 
-Otherwise install a compatible cert-manager release on the downstream cluster using the supported installation method.
+Configure:
+- Correct base URL
+- Real valid license
+- Strong administrator authentication
+- `10-nonha` sizing
+- Verified StorageClass
+- Verified storage overrides if needed
+- Internal router service
+- Chart-managed Ingress
+- TLS Secret issued by cert-manager
+
+Only expose the public Observability router through HTTPS.
+
+Do not publicly expose databases, Elasticsearch, Kafka, ClickHouse, VictoriaMetrics or other internal backend services.
+
+Use the chart's actual ingress schema. Do not assume `ingressClassName` is supported if the selected chart expects `ingress.class`.
+
+Prefer chart-managed Ingress rather than an overlapping manually created Ingress.
+
+Deploy using Helm and the dedicated downstream kubeconfig/context.
+
+Record the exact release and chart version.
+
+Do not remove/recreate the installation if a release already exists. Investigate existing state before deciding on any upgrade.
+
+## PHASE 7 — Validate the deployment
+
+Verify:
+- Helm release is deployed
+- Required pods Ready
+- StatefulSets Ready
+- Services available
+- All PVCs Bound
+- Longhorn volumes healthy
+- No persistent CrashLoopBackOff
+- No unexplained Pending pods
+- No OOMKilled events
+- No disk-pressure issues
+- Resource utilization within acceptable limits
+- Observability router responding
+- Ingress configured correctly
+- TLS certificate Ready
+- TLS renewal configured
+
+Check the HTTP/HTTPS endpoint from the Rancher Management VM.
+
+Use certificate validation with the private CA.
+
+Do not treat `curl -k` as a successful TLS security validation.
+
+Verify:
+- DNS resolves correctly
+- HTTPS certificate matches the hostname
+- Router returns the expected UI
+- Authentication works
+- Admin can log in
+- Dashboard renders
+- No reverse proxy or origin errors
+
+If browser tooling is available, run actual browser tests.
+
+If the browser cannot be used automatically, verify HTTP/API behavior and provide the exact remaining manual browser check.
+
+## PHASE 8 — Rancher integration readiness
+
+Do not install agents yet.
+
+Verify that the Observability Server URL can be reached by the Rancher Management VM.
+
+Determine whether the SUSE Observability Rancher UI extension is already present.
+
+If the extension is present:
+- Check its compatibility
+- Check connectivity and TLS trust
+- Identify any allowed-origin configuration requirements
+
+If not present:
+- Document the exact extension installation procedure
+- Do not modify the management cluster automatically
+
+Private CA trust must be configured correctly for the extension and, later, the agents.
+
+Prepare an agent-onboarding plan for the five downstream clusters, but do not execute it.
+
+For later GPU monitoring, document the prerequisites for NVIDIA DCGM Exporter and SUSE Observability OpenTelemetry scraping. Do not configure GPU agents during this phase.
+
+## PHASE 9 — Final report and handover
+
+Save all deployment artifacts on the Rancher Management VM under:
+
+`/root/observability-deployment/`
 
 Create:
 
-1. A self-signed bootstrap Issuer.
-2. A private demo CA certificate.
-3. A CA Issuer or ClusterIssuer.
-4. A TLS Certificate resource for `agenticai.demo.local`.
-5. Kubernetes TLS Secret in `hr-agentic`.
+1. `PREFLIGHT_REPORT.md`
+2. `INSTALLATION_VALUES.yaml` or secure values reference
+3. `STORAGE_CAPACITY_REPORT.md`
+4. `DEPLOYMENT_REPORT.md`
+5. `TLS_CERT_MANAGER.md`
+6. `VALIDATION_REPORT.md`
+7. `RANCHER_INTEGRATION.md`
+8. `AGENT_ONBOARDING_PLAN.md`
+9. `ROLLBACK.md`
 
-The certificate must include the DNS SAN:
+Do not put passwords, license keys, kubeconfig credentials or private keys into reports.
 
-`agenticai.demo.local`
+Include actual commands executed and validation results.
 
-Keep the CA private key inside the cluster.
+### Final completion requirements
 
-Export only the public CA certificate for client trust.
+I should have:
 
-## Ingress
+- SUSE Observability installed only on downstream `observability`
+- `10-nonha` or an explicitly approved alternative
+- Healthy Helm release
+- Healthy Persistent Volumes
+- cert-manager-managed HTTPS
+- Working `https://observability.demo.local`
+- Successful admin login
+- No blocking errors
+- Preflight and validation reports
+- A prepared, but not executed, five-cluster agent installation plan
 
-Detect the installed ingress controller.
+### Final instruction
 
-Reuse it rather than installing duplicate NGINX or Traefik controllers.
+Begin with read-only discovery from the Rancher Management VM.
 
-Create an Ingress:
+Check all existing connections and requirements before installing anything.
 
-- Host: `agenticai.demo.local`
-- Backend: HR application Service
-- Backend port: actual application port
-- TLS: cert-manager-managed certificate
-- HTTPS on 443
-- HTTP-to-HTTPS redirect
+Complete safe non-destructive prerequisite remediation where necessary.
 
-Do not expose internal Milvus, vLLM, SQLite, LiteLLM or MCP services.
+Do not deploy SUSE Observability until the formal GO/NO-GO preflight is PASS.
 
-Verify that `192.168.1.15` can receive traffic on port 443 through the actual ingress networking configuration.
+Use the **observability downstream cluster exclusively**.
 
-For Windows LAN name resolution, provide the hosts-file entry if internal DNS is not available:
+Do not install any of the five remote-cluster agents yet.
 
-`192.168.1.15 agenticai.demo.local`
+At completion, report the real server URL, installation status, storage consumption and remaining capacity, and any unresolved issues.
 
-Validate:
-
-- Correct DNS resolution
-- Certificate issuance
-- Ingress routing
-- HTTPS login page
-- API requests over HTTPS
-- Session cookies
-- No mixed-content errors
-
-Explain how to trust the public demo CA certificate on Windows.
-
----
-
-# PHASE 10 — FINAL TESTING
-
-Do not stop after checking that Kubernetes pods are Running.
-
-Execute real end-to-end tests.
-
-## Infrastructure
-
-- Correct downstream cluster targeted
-- Node Ready
-- NVIDIA GPU detected
-- Storage healthy
-- No blocking scheduling issues
-- Ingress reachable
-- TLS certificate Ready
-
-## SUSE AI Factory
-
-- Milvus present in AI Factory Workloads
-- vLLM present in AI Factory Workloads
-- Both report their actual healthy/Ready status
-- Milvus accepts queries
-- vLLM processes inference
-- GPU activity is observed
-
-## Agent and MCP
-
-- FastAPI can connect to Milvus
-- Policy chunks are ingested
-- Policy retrieval works
-- MCP connects to SQLite
-- MCP tool calls return actual data
-- LiteLLM routes correctly to AIF-managed vLLM
-- LLM tool calling works
-- Agent responses contain valid citations
-- Live Agent Flow displays real execution events
-
-## Employee and Manager
-
-- Employee login succeeds
-- Manager login succeeds
-- Role isolation works
-- Employee asks for leave balance
-- Correct balance is retrieved
-- Employee submits a leave request
-- Manager sees the request
-- AI provides cited approval guidance
-- Manager approves or rejects
-- Database status updates
-- Balance deduction is correct
-- Duplicate approval is prevented
-- Data persists after pod restart
-
-## Web Access
-
-- `https://agenticai.demo.local` is reachable
-- Login page loads
-- Employee dashboard works
-- Manager dashboard works
-- Sidebar navigation works
-- Agent Flow works
-- No broken API requests
-- No frontend JavaScript errors
-
----
-
-# PHASE 11 — DELIVERABLES
-
-Create the following files inside the project directory on the Rancher Management VM:
-
-- `DEPLOYMENT_REPORT.md`
-- `ARCHITECTURE.md`
-- `SUSE_AI_FACTORY_INTEGRATION.md`
-- `KUBERNETES_MANIFESTS.md`
-- `HTTPS_AND_CERT_MANAGER.md`
-- `EMPLOYEE_MANAGER_DEMO.md`
-- `VALIDATION_REPORT.md`
-- `ROLLBACK.md`
-- `deploy/validate-full-stack.sh`
-
-Document:
-
-- Rancher downstream cluster identity
-- Actual Kubernetes namespaces
-- SUSE AI Factory workloads and status
-- vLLM model and endpoint
-- Milvus endpoint and collection
-- HRMS MCP endpoint
-- SQLite PVC
-- Container image names
-- Docker/registry configuration
-- External HTTPS URL
-- TLS certificate details
-- Login instructions (without disclosing stored secrets)
-- Actual agent trace evidence
-- Complete manager approval test results
-- Unresolved issues, if any
-
----
-
-# FINAL DEFINITION OF DONE
-
-The task is complete only when:
-
-1. I open `https://agenticai.demo.local` from my laptop.
-2. Employee login works.
-3. Employee HR dashboard displays actual SQLite data.
-4. Employee AI chat works through AIF-managed vLLM.
-5. HR policies are retrieved from AIF-managed Milvus.
-6. MCP invokes real HRMS tools.
-7. Live Agent Flow displays the actual processing sequence.
-8. Employee can submit leave.
-9. Manager can log in and analyze pending leave requests.
-10. Manager can approve or reject leave.
-11. SQLite balances and request status update correctly.
-12. Rancher UI shows healthy downstream HRMS workloads.
-13. SUSE AI Factory Workloads shows vLLM and Milvus as Ready.
-14. HTTPS and cert-manager work correctly.
-15. Automated tests pass.
-
-## EXECUTION INSTRUCTION
-
-Start by discovering the ZIP and verifying access to downstream cluster `agentic-ai`.
-
-Then complete each phase in sequence.
-
-Execute changes and verify results. Do not replace real integration with mocks, placeholder data flows, or screenshots.
-
-Only pause when an operation genuinely requires my interaction in Rancher's SUSE AI Factory UI, an authorization that cannot be completed automatically, or approval for potentially destructive changes.
-
-When SUSE AI Factory deployment requires my action, provide the exact Rancher navigation, required configuration fields and verification criteria. Resume integration after that action.
-
-**Do not install HRMS or AI application workloads on the Rancher Management Cluster.**
-
-The final solution must be a real, demonstrable, SUSE AI Factory-managed Agentic HRMS application running entirely on downstream cluster `agentic-ai`.
+Do not claim success unless the system has actually been tested.
