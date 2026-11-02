@@ -1,448 +1,71 @@
-# TASK: COMPLETE SUSE GENAI OBSERVABILITY INSTALLATION AND INTEGRATION
+CONTINUE THE EXISTING GENAI OBSERVABILITY INSTALLATION NOW.
 
-You are the lead SUSE Observability, SUSE AI Factory, Rancher Prime, Kubernetes, Helm, OpenTelemetry and NVIDIA GPU monitoring engineer.
+You stopped unnecessarily because you were trying to create a dedicated service token.
 
-I authorize you to complete this installation autonomously using my existing Rancher Management VM access and authorized credentials.
+IMPORTANT CORRECTION:
 
-Do not repeatedly stop for routine configuration, missing Secrets, missing monitoring resources or already-known prerequisites. Resolve those issues and continue.
+The official SUSE AI Observability Extension Helm chart supports BOTH:
+- tokenType: api
+- tokenType: service
 
-**The objective is a fully functioning GenAI Observability extension inside my existing SUSE Observability UI, including GPU Nodes for the `coding-assistant` cluster.**
+Use `tokenType: api` with the existing SUSE Observability administrator's API token from:
 
-## 1. Existing architecture
+https://observability.demo.local → Main Menu → CLI
 
-### Execution machine
+DO NOT require a new service token.
 
-Codex runs on the Rancher Management VM.
+EXECUTE THE FOLLOWING:
 
-This machine can access the Rancher-managed downstream Kubernetes clusters.
+1. Use the authorized browser session, if available, to open SUSE Observability → Main Menu → CLI and obtain the API token securely. Do not print it in terminal output, logs or reports.
 
-### Installation target
+2. If browser automation is unavailable, check existing authorized CLI contexts or protected credential references for a valid API token. Do not reuse unrelated credentials or bypass authentication.
 
-- Downstream cluster: `observability`
-- Kubernetes: RKE2
-- Existing SUSE Observability Server: Healthy
-- Existing UI: `https://observability.demo.local`
-- Server namespace: `suse-observability`
-- GenAI extension namespace: `so-extensions`
-- Extension Helm release name: `ai-obs`
+3. Verify the actual Helm chart version and values schema under:
+   /root/genai-observability-setup/
 
-Use the dedicated Observability downstream kubeconfig:
+4. Use:
+   - tokenType: api
+   - serverUrl: http://suse-observability-router.suse-observability.svc.cluster.local:8080
+   - existingSecret: ai-obs-service-token
+   - existingSecretKey: token
+   - kubernetesClusters: [observability, coding-assistant]
+   - global.imagePullSecrets: [application-collection]
 
-`/root/observability-deployment/downstream.kubeconfig`
+   Adapt only if the actual chart schema requires different field names.
 
-Verify the target cluster before every installation operation.
+5. Store the authorized API token in Kubernetes Secret `ai-obs-service-token` in namespace `so-extensions`.
 
-**Never install the GenAI extension on Rancher's `local` management cluster.**
+6. The existing CA, TLS certificate, cert-manager, HTTPS Ingress and Observability Server must remain completely unchanged.
 
-### Existing monitored clusters
+7. Install the already downloaded SUSE AI Observability Extension chart version 2.2.0 into downstream cluster `observability`, namespace `so-extensions`.
 
-1. `observability`
-2. `coding-assistant`
+8. Verify:
+   - Helm release deployed
+   - Extension pods Ready
+   - Image pulling successful
+   - Topology synchronization Jobs successful
+   - Existing Kubernetes monitoring still works
 
-Existing GPU monitoring:
+9. Open https://observability.demo.local and verify that the GenAI Observability sidebar is visible.
 
-- Cluster: `coding-assistant`
-- GPU: NVIDIA L40S-16Q vGPU
-- GPU Operator: Healthy
-- DCGM Exporter: Healthy
-- SUSE Observability Agent: Healthy
-- Kubernetes metrics: Working
-- GPU metrics: Already ingested into VictoriaMetrics
-- Existing dashboard: `COD - NVIDIA GPU Monitoring`
+10. Open GenAI Observability → GPU Nodes and validate the `coding-assistant` NVIDIA L40S-16Q GPU.
 
-GPU utilization and framebuffer used/free metrics have already been verified.
+11. If GPU Nodes is empty, fix the extension-specific topology mapping using supported configuration. Do not reinstall DCGM Exporter or change the existing working metrics pipeline.
 
-Do not reinstall or modify these components.
+12. Provide the actual UI URL and successful verification results.
 
-## 2. Mandatory protection rules
+DO NOT:
+- Repeat general infrastructure discovery.
+- Attempt unnecessary service-token creation.
+- Ask for permission to create missing extension-specific Kubernetes resources.
+- Restart existing applications.
+- Change Observability TLS certificates.
+- Modify Rancher local cluster.
+- Reinstall SUSE Observability Server.
+- Restart vLLM, LiteLLM or GPU Operator.
 
-Do not:
+You are authorized to complete all required extension-specific changes.
 
-- Reinstall or upgrade SUSE Observability Server.
-- Restart existing Observability Server workloads.
-- Modify `observability-ca` or `observability-tls`.
-- Create a new certificate authority.
-- Change cert-manager Issuers or Certificates.
-- Modify the existing Ingress.
-- Change the Observability Server storage configuration.
-- Restart NVIDIA GPU Operator, DCGM Exporter, vLLM or LiteLLM.
-- Restart existing application workloads.
-- Modify Rancher management components.
-- Delete or recreate Kubernetes StackPack instances.
-- Modify existing working dashboards.
-- Change the existing Kubernetes Observability Agents.
-- Delete or modify existing application data.
-- Disable TLS verification for external HTTPS connections.
+If authenticated UI access is technically unavailable, identify that ONE required authentication action clearly. Do not pretend the token can be retrieved without access.
 
-You may:
-
-- Install the SUSE AI Observability Extension.
-- Create or repair resources only in `so-extensions`.
-- Install required extension-specific ConfigMaps, Secrets, ServiceAccounts, RBAC and CronJobs.
-- Create a dedicated SUSE Observability API Service Token using an existing authorized identity.
-- Reuse existing authorized Kubernetes Secrets securely.
-- Install missing monitoring-extension dependencies when compatible.
-- Repair the new extension's own Deployments, Jobs and configuration.
-- Make narrowly scoped monitoring-only metadata or instrumentation changes if confirmed safe and necessary.
-
-Do not interrupt active applications to populate a GenAI dashboard.
-
-## 3. Step 1 — Discover existing configuration
-
-Perform a short, focused inspection.
-
-Verify:
-
-- Correct downstream Kubernetes context.
-- Existing SUSE Observability Server is healthy.
-- Existing SUSE Observability UI is accessible.
-- Namespace `so-extensions` exists.
-- `application-collection` registry Secret exists.
-- Existing `observability-ca` and `observability-tls` remain Ready.
-- Existing Helm registry authentication.
-- Whether the GenAI extension Helm release is already installed.
-
-Do not repeat unrelated cluster discovery.
-
-## 4. Step 2 — Handle registry authentication automatically
-
-OCI chart:
-
-`oci://dp.apps.rancher.io/charts/suse-ai-observability-extension`
-
-The `application-collection` Kubernetes imagePullSecret already exists on the Observability downstream cluster in namespace `so-extensions`.
-
-Check it first.
-
-Helm OCI registry credentials may need to be configured separately on the Rancher Management VM.
-
-If Helm registry login is not available:
-
-1. Check existing authorized Helm registry configuration.
-2. Check existing authorized SUSE Application Collection credentials or service-account references.
-3. Reuse valid credentials securely where permitted.
-4. Authenticate Helm to `dp.apps.rancher.io`.
-5. Do not print credentials.
-6. Do not put credentials in shell history or project files.
-
-If a valid registry credential is already available, do not generate another token.
-
-If no authorized credential is accessible, report that specific authentication blocker rather than trying unrelated installation methods.
-
-Do not bypass registry authentication.
-
-## 5. Step 3 — Create or repair SUSE Observability API authentication
-
-There are two different credential types:
-
-1. SUSE Application Collection registry credentials.
-2. SUSE Observability API authentication credentials.
-
-Do not confuse them.
-
-The Kubernetes Secret `ai-obs-service-token` was previously created and then deleted during manual troubleshooting.
-
-Inspect whether it currently exists in `so-extensions`.
-
-If absent, create it.
-
-First check for an already authorized Observability API session, existing service-token reference, or configured SUSE Observability CLI (`sts`) on the management VM.
-
-Use the official SUSE Observability CLI or authenticated API to create a dedicated Service Token with the minimum permissions required by the installed GenAI extension.
-
-If appropriate, create a token named:
-
-`genai-observability-extension`
-
-Use the actual roles and scopes required by the installed extension version.
-
-Do not assume that the Kubernetes Agent receiver token or Rancher UI extension token has sufficient API permissions.
-
-Store the token securely in:
-
-Namespace: `so-extensions`
-
-Secret: `ai-obs-service-token`
-
-Key: `token`
-
-Use the chart's supported `existingSecret` and `existingSecretKey` mechanism if available.
-
-Never display token values in logs or reports.
-
-Do not hardcode tokens in a Helm values YAML file.
-
-If a valid preexisting credential can be used securely, reuse it rather than creating duplicate tokens.
-
-The token previously displayed during troubleshooting should be considered exposed; rotate it if it remains valid and is used by this integration.
-
-## 6. Step 4 — Reuse existing internal Observability connectivity
-
-The GenAI extension will run in the SAME downstream cluster as the SUSE Observability Server.
-
-Use the existing internal Kubernetes Service for extension-to-server communication, if supported by the installed chart.
-
-Preferred internal endpoint after verification:
-
-`http://suse-observability-router.suse-observability.svc.cluster.local:8080`
-
-Discover the actual router Service and port.
-
-Validate connectivity from inside the downstream cluster.
-
-For the internal HTTP Service connection:
-
-- Do not generate another CA.
-- Do not change TLS certificates.
-- Do not modify the external Ingress.
-- Do not disable TLS validation for unrelated HTTPS connections.
-
-The public browser URL must remain:
-
-`https://observability.demo.local`
-
-Existing users and Kubernetes Agents must continue using their working endpoints.
-
-## 7. Step 5 — Inspect actual GenAI extension chart
-
-Download the Helm chart values using the authenticated OCI registry.
-
-Inspect the current chart version and actual values schema.
-
-Pay particular attention to:
-
-- `global.imagePullSecrets`
-- `serverUrl`
-- `tokenType`
-- `apiToken`
-- `existingSecret`
-- `existingSecretKey`
-- `kubernetesClusters`
-- `tls`
-- Topology synchronization settings
-- Namespace and RBAC settings
-- Required image repositories
-
-Use the officially supported settings for the actual chart version.
-
-Do not assume unsupported Helm values will work merely because `helm template` succeeds.
-
-Create a small customized `genai-values.yaml` containing only required overrides.
-
-Configure cluster discovery for existing monitored clusters:
-
-- `observability`
-- `coding-assistant`
-
-Do not create duplicate Kubernetes StackPack instances.
-
-Check whether the extension's synchronization configuration includes both clusters and preserves existing instances.
-
-Render manifests and verify the exact target namespaces, resources, Secret references and image pull configuration.
-
-## 8. Step 6 — Install the extension
-
-Use the official chart:
-
-`oci://dp.apps.rancher.io/charts/suse-ai-observability-extension`
-
-Deploy only to:
-
-- Cluster: `observability`
-- Namespace: `so-extensions`
-- Helm release: `ai-obs`
-
-Use the existing version if the extension release is already present; avoid unplanned upgrades.
-
-For a new installation, select the appropriate compatible chart version.
-
-Install or upgrade the extension using the correct values.
-
-Wait for its own Kubernetes resources to become Ready.
-
-Verify:
-
-- Helm release deployed.
-- Image pulls succeed.
-- ServiceAccounts and RBAC healthy.
-- Required Deployments Ready.
-- Topology synchronization CronJobs installed.
-- Jobs complete successfully.
-- No authentication failures.
-- No server connection failures.
-- No unwanted duplicate StackPacks.
-
-If any new extension pod fails, inspect its logs and resolve the specific issue without changing existing unrelated workloads.
-
-Do not stop merely because a missing monitoring-specific Secret, ConfigMap or RBAC resource needs to be created.
-
-## 9. Step 7 — Verify GenAI Observability UI
-
-Open:
-
-`https://observability.demo.local`
-
-Use existing authorized browser access.
-
-Verify that the left sidebar now contains:
-
-**GenAI Observability**
-
-Verify the available views:
-
-- Components
-- Applications
-- LLM Systems
-- Vector Databases
-- GPU Nodes
-
-Use the actual installed UI navigation and version.
-
-Confirm that these views render without frontend errors.
-
-Do not claim success merely because Helm reports deployed.
-
-If browser automation is available, use it to inspect the real rendered pages.
-
-If UI authorization is unavailable, use authenticated supported APIs where possible, and clearly distinguish API verification from browser-render verification.
-
-## 10. Step 8 — Populate and verify GPU Nodes
-
-The `coding-assistant` cluster already sends real NVIDIA DCGM metrics.
-
-Verify the current data remains available.
-
-Known metrics include:
-
-- GPU utilization
-- GPU framebuffer memory used
-- GPU framebuffer memory free
-- GPU model
-- GPU UUID
-- Kubernetes cluster name
-
-The existing metric label is:
-
-`k8s_cluster_name="coding-assistant"`
-
-GPU model:
-
-`NVIDIA L40S-16Q`
-
-Verify:
-
-1. GPU topology entity discovery.
-2. GPU node association with the correct Kubernetes cluster.
-3. Required SUSE AI component resource attributes.
-4. DCGM metric association with GPU entities.
-5. Compatibility of existing OpenTelemetry resource labels with the GenAI extension.
-
-If the GenAI GPU Nodes view is empty even though Metrics Explorer contains data, diagnose and resolve the missing topology/metric mapping using the official SUSE AI Observability instrumentation requirements.
-
-Do not reinstall DCGM Exporter or the existing GPU scraping Agent.
-
-If a separate SUSE AI OpenTelemetry processor or metadata-enrichment configuration is required, implement it as a lightweight isolated monitoring component only after verifying compatibility.
-
-Do not replace the existing working telemetry pipeline.
-
-Avoid duplicate GPU scraping and duplicate time series.
-
-Verify the GenAI UI displays actual GPU entities and available telemetry.
-
-Temperature and power are not exposed as valid readings by the current NVIDIA L40S-16Q vGPU exporter. Do not invent those measurements.
-
-## 11. Step 9 — LLM and application views
-
-Inspect whether GenAI Observability can discover existing AI components.
-
-Look for:
-
-- vLLM
-- LiteLLM
-- Coding Assistant application
-- LLM model serving components
-
-Check which existing telemetry supports topology and LLM-system discovery.
-
-If additional GenAI semantic-convention instrumentation is required, configure only safe non-disruptive collectors or metadata enrichment.
-
-Do not restart or instrument running vLLM/LiteLLM application processes if that requires application changes.
-
-Do not fabricate LLM tokens, latency, model relationships or inference traces.
-
-Where instrumentation is missing and cannot be safely added, document exactly what is required later.
-
-The initial priority is:
-
-1. GenAI navigation working.
-2. GPU Nodes visible with real GPU metrics.
-3. Existing Kubernetes monitoring preserved.
-4. Additional LLM views populated where already-supported telemetry allows it.
-
-## 12. Step 10 — Final validation
-
-Check all of the following:
-
-- SUSE Observability Server remains healthy.
-- Existing HTTPS ingress works.
-- Existing certificate is unchanged.
-- Both Kubernetes clusters remain observed.
-- `COD - NVIDIA GPU Monitoring` continues working.
-- GenAI extension Helm release is healthy.
-- GenAI topology synchronization jobs work.
-- GenAI sidebar is visible.
-- GPU Nodes view recognizes `coding-assistant`.
-- NVIDIA GPU utilization and memory show real metrics where supported.
-- No unrelated workload was restarted.
-- Existing vLLM and LiteLLM are healthy.
-- Coding Assistant remains accessible at https://aicodeassistant.demo.local.
-- Existing data and storage remain unchanged.
-
-Save all non-sensitive execution evidence on the Rancher Management VM under:
-
-`/root/genai-observability-setup/`
-
-Include:
-
-- Installation report
-- Chart version
-- Redacted Helm values
-- Secret reference names
-- Pod readiness
-- CronJob status
-- UI navigation
-- GPU Nodes validation
-- Missing GenAI instrumentation, if any
-- Exact URLs
-- Changes made
-- Rollback instructions
-
-Never include plaintext tokens or passwords in these reports.
-
-## EXECUTION BEHAVIOR
-
-You are explicitly authorized to perform the safe installation and configuration operations listed above.
-
-Proceed through all steps autonomously.
-
-Do not pause after each discovery command.
-
-Do not ask for confirmation to create missing extension-specific resources.
-
-Do not stop for missing routine monitoring dependencies that can be installed safely.
-
-Do not regenerate existing working TLS resources.
-
-Do not reinstall or restart unrelated applications.
-
-Only stop for:
-- A genuinely unavailable authorized credential.
-- A required interactive authentication that cannot be completed with available tools.
-- An operation that would disrupt existing applications.
-- An unsupported or incompatible change that cannot be safely resolved.
-
-In those cases, report the single exact blocker and required user action.
-
-**Final objective: SUSE Observability → GenAI Observability → GPU Nodes → coding-assistant, showing real NVIDIA GPU telemetry, with existing systems unaffected.**
-
-Start executing now. Do not return another planning-only response.
+Complete the installation and browser verification, not another investigation-only response.
