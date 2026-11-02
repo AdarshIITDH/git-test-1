@@ -1,54 +1,14 @@
-The missing monitoring CRDs are explicitly AUTHORIZED for installation. Stop asking for permission or repeating discovery.
+GPU ingestion is already confirmed working on coding-assistant. DO NOT change Kubernetes, Helm, OTel, DCGM or existing applications.
 
-Target cluster: `coding-assistant`
+Fix ONLY the SUSE Observability dashboard UI.
 
-Kubeconfig: `/root/coding-assistant-aif-migration/kubeconfig.json`
+1. Inspect the saved dashboard 'COD - NVIDIA GPU Monitoring' and its actual ID, URL, widgets and ownership.
+2. Confirm it is accessible to my SUSE Observability browser user; if private to an API/service account, make it Public using the supported API and appropriate permissions.
+3. Verify each widget queries actual DCGM metrics with k8s_cluster_name="coding-assistant".
+4. Use a Last 1 hour time range and suitable refresh interval.
+5. Include GPU Utilization %, GPU FB Used MiB, GPU FB Free MiB. Omit temperature and power because the vGPU exporter does not expose valid data.
+6. Verify real data appears in Metrics Explorer and the saved dashboard.
+7. Provide the EXACT direct URL to the dashboard so I can open it from my browser.
+8. If browser rendering cannot be verified, report that limitation clearly and give me the exact manual UI check.
 
-Existing Agent release: `suse-observability-agent`
-
-Existing chart version: `1.7.19`
-
-I authorize installing the required ServiceMonitor, PodMonitor and Probe CRDs through the existing SUSE Observability Agent Helm chart.
-
-EXECUTE NOW:
-
-1. Upgrade the EXISTING Agent Helm release using the exact installed chart version, preserving all existing Helm values, receiver token, cluster identity and private CA configuration.
-
-2. Enable:
-   - `otel.enabled=true`
-   - `otel.telemetryGateway.enabled=false`
-   - `otel.prometheusScraping.enabled=true`
-   - `otel.prometheusScraping.monitorCrds.enabled=true`
-   - `otel.k8sResourceCollector.enabled=false`
-
-3. Verify that the ServiceMonitor CRD exists and is established. Do not install a duplicate Prometheus Operator.
-
-4. Create one ServiceMonitor:
-   - Name: `coding-assistant-dcgm`
-   - Namespace: `suse-observability-agent`
-   - Target namespace: `gpu-operator`
-   - Service selector: `app=nvidia-dcgm-exporter`
-   - Named port: `gpu-metrics`
-   - Path: `/metrics`
-   - Interval: `60s`
-   - Label: `observability.suse.com/agent: scrape`
-
-5. Verify OTel Collector and Target Allocator become Ready and discover the DCGM scrape target.
-
-6. Port 19400 is occupied by an earlier port-forward. Reuse it if valid, or use another free local port such as 19401. This is not an installation blocker.
-
-7. Verify actual GPU utilization and framebuffer memory metrics reach `https://observability.demo.local`.
-
-8. Verify the `coding-assistant` cluster's existing Kubernetes metrics continue working.
-
-9. Confirm vLLM, LiteLLM, NVIDIA GPU Operator and Coding Assistant UI remain healthy.
-
-10. Create the GPU dashboard using the installed Observability version's supported capabilities, or give me only the manual UI action if browser access is unavailable.
-
-Do not restart or modify any existing application, GPU Operator or Observability Server.
-
-You are explicitly authorized to install missing monitoring-only dependencies and update the existing monitoring Agent.
-
-Do not stop after inspection. Execute the Helm upgrade, create the ServiceMonitor, validate ingestion and provide actual results.
-
-Stop only for a verified technical failure that cannot be safely resolved without disrupting existing applications.
+Do not repeat infrastructure discovery. Do not reinstall or restart monitoring or application components. Just make the existing GPU metrics visible in the dashboard.
