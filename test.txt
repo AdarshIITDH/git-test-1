@@ -1,71 +1,147 @@
-CONTINUE THE EXISTING GENAI OBSERVABILITY INSTALLATION NOW.
+# Diagnose and Fix Empty SUSE GenAI Observability Views
 
-You stopped unnecessarily because you were trying to create a dedicated service token.
+SUSE AI Observability Extension version 2.2.0 is installed and working.
 
-IMPORTANT CORRECTION:
+Current confirmed state:
+- GenAI sidebar is visible.
+- GPU Nodes shows NVIDIA L40S-16Q in Ready state.
+- Kubernetes monitoring works for `observability` and `coding-assistant`.
+- DCGM GPU utilization and framebuffer metrics are already collected.
+- AI Applications, Inference Engines, LLM Models and All GenAI Components are empty.
+- vLLM and LiteLLM are running on `coding-assistant`.
 
-The official SUSE AI Observability Extension Helm chart supports BOTH:
-- tokenType: api
-- tokenType: service
+Your objective is to **identify the exact reason the remaining GenAI views are empty, then safely fix the missing monitoring configuration**.
 
-Use `tokenType: api` with the existing SUSE Observability administrator's API token from:
+## Environment
 
-https://observability.demo.local → Main Menu → CLI
+Codex execution: Rancher Management VM.
 
-DO NOT require a new service token.
+Observability downstream kubeconfig:
+`/root/observability-deployment/downstream.kubeconfig`
 
-EXECUTE THE FOLLOWING:
+Coding Assistant downstream kubeconfig:
+`/root/coding-assistant-aif-migration/kubeconfig.json`
 
-1. Use the authorized browser session, if available, to open SUSE Observability → Main Menu → CLI and obtain the API token securely. Do not print it in terminal output, logs or reports.
+Observability UI:
+`https://observability.demo.local`
 
-2. If browser automation is unavailable, check existing authorized CLI contexts or protected credential references for a valid API token. Do not reuse unrelated credentials or bypass authentication.
+Existing GenAI release:
+`ai-obs`, namespace `so-extensions`, chart version 2.2.0.
 
-3. Verify the actual Helm chart version and values schema under:
-   /root/genai-observability-setup/
+## Phase 1 — Root Cause Analysis (Read-only)
 
-4. Use:
-   - tokenType: api
-   - serverUrl: http://suse-observability-router.suse-observability.svc.cluster.local:8080
-   - existingSecret: ai-obs-service-token
-   - existingSecretKey: token
-   - kubernetesClusters: [observability, coding-assistant]
-   - global.imagePullSecrets: [application-collection]
+1. Inspect the existing SUSE AI StackPack topology synchronization, GPU entity discovery and component mappings.
 
-   Adapt only if the actual chart schema requires different field names.
+2. Discover the actual vLLM Service, namespace, port, model name, image version and `/metrics` endpoint on `coding-assistant`.
 
-5. Store the authorized API token in Kubernetes Secret `ai-obs-service-token` in namespace `so-extensions`.
+3. Verify whether vLLM exports real Prometheus metrics such as:
+   - `vllm:num_requests_running`
+   - `vllm:num_requests_waiting`
+   - `vllm:prompt_tokens_total`
+   - `vllm:generation_tokens_total`
+   - TTFT and end-to-end latency histograms
 
-6. The existing CA, TLS certificate, cert-manager, HTTPS Ingress and Observability Server must remain completely unchanged.
+   Adapt to actual metric names.
 
-7. Install the already downloaded SUSE AI Observability Extension chart version 2.2.0 into downstream cluster `observability`, namespace `so-extensions`.
+4. Check existing ServiceMonitor resources and OTel scrape configuration. Determine whether vLLM is currently scraped.
 
-8. Verify:
-   - Helm release deployed
-   - Extension pods Ready
-   - Image pulling successful
-   - Topology synchronization Jobs successful
-   - Existing Kubernetes monitoring still works
+5. Query the SUSE Observability metrics backend for actual vLLM metrics. Distinguish:
+   - Endpoint not exposing metrics.
+   - Scrape target not discovered.
+   - Collector scrape failure.
+   - Metrics not reaching server.
+   - Metrics reaching server but missing GenAI topology identification.
 
-9. Open https://observability.demo.local and verify that the GenAI Observability sidebar is visible.
+6. Inspect SUSE AI extension 2.2.0 topology mappings and compare observed resource attributes with:
+   - `suse.ai.component.name`
+   - `suse.ai.component.type`
+   - `k8s.cluster.name`
+   - `k8s.namespace.name`
+   - `service.name`
+   - `gen_ai.provider.name`
+   - `gen_ai.request.model`
 
-10. Open GenAI Observability → GPU Nodes and validate the `coding-assistant` NVIDIA L40S-16Q GPU.
+7. Examine whether existing Coding Assistant or LiteLLM telemetry emits the GenAI metrics and traces required for AI Applications and LLM Models.
 
-11. If GPU Nodes is empty, fix the extension-specific topology mapping using supported configuration. Do not reinstall DCGM Exporter or change the existing working metrics pipeline.
+8. Check whether the vLLM metric name normalization from `vllm:` to `vllm_` is required by the installed collector and extension.
 
-12. Provide the actual UI URL and successful verification results.
+9. Produce a concise table showing each blank GenAI view, its missing data or topology mapping, and the confirmed root cause.
 
-DO NOT:
-- Repeat general infrastructure discovery.
-- Attempt unnecessary service-token creation.
-- Ask for permission to create missing extension-specific Kubernetes resources.
-- Restart existing applications.
-- Change Observability TLS certificates.
-- Modify Rancher local cluster.
-- Reinstall SUSE Observability Server.
-- Restart vLLM, LiteLLM or GPU Operator.
+Do not infer success from Kubernetes pod status alone.
 
-You are authorized to complete all required extension-specific changes.
+## Phase 2 — Fix Inference Engine Monitoring
 
-If authenticated UI access is technically unavailable, identify that ONE required authentication action clearly. Do not pretend the token can be retrieved without access.
+Once the cause is identified:
 
-Complete the installation and browser verification, not another investigation-only response.
+1. Reuse the existing SUSE Observability Agent and OpenTelemetry scraping pipeline.
+
+2. If vLLM scraping is missing, create a dedicated ServiceMonitor targeting its existing Service and `/metrics` endpoint.
+
+3. Preserve the existing GPU/DCGM ServiceMonitor.
+
+4. Configure the documented version-compatible metric name normalization and SUSE AI resource attributes, if required, using a monitoring-only collector configuration.
+
+5. Preserve cluster and namespace identity in all telemetry.
+
+6. Verify vLLM metrics reach the server.
+
+7. Verify that vLLM appears under GenAI Observability → Inference Engines.
+
+8. Verify the engine's actual performance metrics and relevant available charts.
+
+## Phase 3 — Fix LLM Model Discovery
+
+1. Inspect how SUSE AI Extension 2.2.0 identifies LLM models.
+
+2. Verify the exact served model identifier from vLLM `/v1/models`.
+
+3. Check whether `gen_ai.request.model` is being emitted by existing instrumentation.
+
+4. If model telemetry can be obtained through existing non-disruptive monitoring components, configure the appropriate supported OTel inference/model topology mapping.
+
+5. Never fabricate model metrics or create synthetic successful requests.
+
+6. Verify the real model appears under LLM Models.
+
+If model discovery requires changes to running application processes, document the necessary instrumentation and do not restart those applications without approval.
+
+## Phase 4 — Diagnose AI Application Discovery
+
+Inspect the Coding Assistant and LiteLLM telemetry.
+
+Determine whether they emit:
+- GenAI request counts
+- Input/output token metrics
+- Request model/provider attributes
+- OTel application/resource identity
+- GenAI request traces
+
+Compare against the SUSE AI Extension's requirements.
+
+If AI Applications requires OpenLIT, OpenTelemetry SDK or equivalent instrumentation that would require changing/restarting the running application, DO NOT perform that disruptive change.
+
+Instead, produce a precise, minimal implementation plan to instrument the application during a later maintenance window.
+
+## Phase 5 — Validate
+
+Verify:
+
+- Existing GPU Nodes remains functional.
+- Both Kubernetes clusters remain observed.
+- Inference Engines displays vLLM if supported telemetry and mappings are available.
+- LLM Models displays the real model where discovery requirements can be met non-disruptively.
+- AI Applications only displays components supported by actual instrumentation.
+- Existing Coding Assistant application remains accessible.
+- vLLM and LiteLLM have not been restarted.
+- No change to GPU Operator, DCGM Exporter or Observability Server.
+- No duplicate telemetry scraping.
+
+Report:
+1. Confirmed root cause for each missing view.
+2. Changes applied.
+3. Exact metrics collected.
+4. Which GenAI sections now contain real data.
+5. What instrumentation is still necessary.
+6. Actual UI verification results.
+
+**Execution behavior:** Complete read-only diagnosis first, then execute safe monitoring-only fixes. Do not reinstall the existing extension or monitoring stack. Do not stop for routine missing monitoring resources. Stop only if a fix requires restarting or modifying existing applications, or if essential authorized access is unavailable.
