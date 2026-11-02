@@ -1,147 +1,240 @@
-# Diagnose and Fix Empty SUSE GenAI Observability Views
+# FIX NVIDIA DEVICE PLUGIN — AGENTIC-AI CLUSTER ONLY
 
-SUSE AI Observability Extension version 2.2.0 is installed and working.
+You are a SUSE Rancher Prime, RKE2, NVIDIA GPU Operator, NVIDIA vGPU, SUSE AI Factory and Kubernetes troubleshooting engineer.
 
-Current confirmed state:
-- GenAI sidebar is visible.
-- GPU Nodes shows NVIDIA L40S-16Q in Ready state.
-- Kubernetes monitoring works for `observability` and `coding-assistant`.
-- DCGM GPU utilization and framebuffer metrics are already collected.
-- AI Applications, Inference Engines, LLM Models and All GenAI Components are empty.
-- vLLM and LiteLLM are running on `coding-assistant`.
+**EXECUTE THE REPAIR AND VALIDATE THE COMPLETE AGENTIC HRMS STACK.**
 
-Your objective is to **identify the exact reason the remaining GenAI views are empty, then safely fix the missing monitoring configuration**.
+The NVIDIA Device Plugin pod has entered CrashLoopBackOff on one downstream cluster.
 
 ## Environment
 
-Codex execution: Rancher Management VM.
+- Codex execution: Rancher Management VM
+- Target Rancher downstream cluster: `agentic-ai`
+- Target node IP: `192.168.1.15`
+- Operating system: SLES
+- Kubernetes: RKE2
+- GPU: NVIDIA vGPU; verify actual profile
+- Application: SUSE Private Agentic HRMS
+- Application URL: `https://agenticai.demo.local`
+- AI infrastructure: vLLM, Milvus, LiteLLM, MCP, SQLite and FastAPI
+- Rancher manages the cluster.
 
-Observability downstream kubeconfig:
-`/root/observability-deployment/downstream.kubeconfig`
+**ONLY modify `agentic-ai`. Do not touch Rancher `local`, `observability`, `coding-assistant`, `digital-assistant`, or `kubeflow`.**
 
-Coding Assistant downstream kubeconfig:
-`/root/coding-assistant-aif-migration/kubeconfig.json`
+## PHASE 1 — Discover exact failure
 
-Observability UI:
-`https://observability.demo.local`
+Obtain the correct downstream kubeconfig from the existing authorized Rancher configuration.
 
-Existing GenAI release:
-`ai-obs`, namespace `so-extensions`, chart version 2.2.0.
+Confirm the target is `agentic-ai` before making any changes.
 
-## Phase 1 — Root Cause Analysis (Read-only)
+Find the actual crashing Device Plugin pod, container, DaemonSet and namespace.
 
-1. Inspect the existing SUSE AI StackPack topology synchronization, GPU entity discovery and component mappings.
+Run the necessary checks:
 
-2. Discover the actual vLLM Service, namespace, port, model name, image version and `/metrics` endpoint on `coding-assistant`.
+```bash
+kubectl get nodes -o wide
+kubectl get pods -A -o wide
+kubectl get clusterpolicy -o yaml
+kubectl get events -A --sort-by=.lastTimestamp
+```
 
-3. Verify whether vLLM exports real Prometheus metrics such as:
-   - `vllm:num_requests_running`
-   - `vllm:num_requests_waiting`
-   - `vllm:prompt_tokens_total`
-   - `vllm:generation_tokens_total`
-   - TTFT and end-to-end latency histograms
+Inspect the failing component using its actual name:
 
-   Adapt to actual metric names.
+```bash
+kubectl -n <namespace> describe pod <device-plugin-pod>
+kubectl -n <namespace> logs <device-plugin-pod> --all-containers --previous --tail=200
+kubectl -n <namespace> logs <device-plugin-pod> --all-containers --tail=200
+```
 
-4. Check existing ServiceMonitor resources and OTel scrape configuration. Determine whether vLLM is currently scraped.
+Also inspect:
 
-5. Query the SUSE Observability metrics backend for actual vLLM metrics. Distinguish:
-   - Endpoint not exposing metrics.
-   - Scrape target not discovered.
-   - Collector scrape failure.
-   - Metrics not reaching server.
-   - Metrics reaching server but missing GenAI topology identification.
+- GPU Operator controller
+- NVIDIA driver components
+- NVIDIA Container Toolkit
+- GPU Feature Discovery
+- GPU Operator validator
+- NVIDIA device-plugin configuration
+- GPU Operator Helm chart and values
+- NVIDIA runtime/CDI configuration
+- Kubernetes node conditions and GPU labels
 
-6. Inspect SUSE AI extension 2.2.0 topology mappings and compare observed resource attributes with:
-   - `suse.ai.component.name`
-   - `suse.ai.component.type`
-   - `k8s.cluster.name`
-   - `k8s.namespace.name`
-   - `service.name`
-   - `gen_ai.provider.name`
-   - `gen_ai.request.model`
+Do not guess the cause from CrashLoopBackOff alone.
 
-7. Examine whether existing Coding Assistant or LiteLLM telemetry emits the GenAI metrics and traces required for AI Applications and LLM Models.
+## PHASE 2 — Diagnose host GPU and vGPU
 
-8. Check whether the vLLM metric name normalization from `vllm:` to `vllm_` is required by the installed collector and extension.
+Using authorized node access, run:
 
-9. Produce a concise table showing each blank GenAI view, its missing data or topology mapping, and the confirmed root cause.
-
-Do not infer success from Kubernetes pod status alone.
-
-## Phase 2 — Fix Inference Engine Monitoring
-
-Once the cause is identified:
-
-1. Reuse the existing SUSE Observability Agent and OpenTelemetry scraping pipeline.
-
-2. If vLLM scraping is missing, create a dedicated ServiceMonitor targeting its existing Service and `/metrics` endpoint.
-
-3. Preserve the existing GPU/DCGM ServiceMonitor.
-
-4. Configure the documented version-compatible metric name normalization and SUSE AI resource attributes, if required, using a monitoring-only collector configuration.
-
-5. Preserve cluster and namespace identity in all telemetry.
-
-6. Verify vLLM metrics reach the server.
-
-7. Verify that vLLM appears under GenAI Observability → Inference Engines.
-
-8. Verify the engine's actual performance metrics and relevant available charts.
-
-## Phase 3 — Fix LLM Model Discovery
-
-1. Inspect how SUSE AI Extension 2.2.0 identifies LLM models.
-
-2. Verify the exact served model identifier from vLLM `/v1/models`.
-
-3. Check whether `gen_ai.request.model` is being emitted by existing instrumentation.
-
-4. If model telemetry can be obtained through existing non-disruptive monitoring components, configure the appropriate supported OTel inference/model topology mapping.
-
-5. Never fabricate model metrics or create synthetic successful requests.
-
-6. Verify the real model appears under LLM Models.
-
-If model discovery requires changes to running application processes, document the necessary instrumentation and do not restart those applications without approval.
-
-## Phase 4 — Diagnose AI Application Discovery
-
-Inspect the Coding Assistant and LiteLLM telemetry.
-
-Determine whether they emit:
-- GenAI request counts
-- Input/output token metrics
-- Request model/provider attributes
-- OTel application/resource identity
-- GenAI request traces
-
-Compare against the SUSE AI Extension's requirements.
-
-If AI Applications requires OpenLIT, OpenTelemetry SDK or equivalent instrumentation that would require changing/restarting the running application, DO NOT perform that disruptive change.
-
-Instead, produce a precise, minimal implementation plan to instrument the application during a later maintenance window.
-
-## Phase 5 — Validate
+```bash
+nvidia-smi
+nvidia-smi -q
+```
 
 Verify:
 
-- Existing GPU Nodes remains functional.
-- Both Kubernetes clusters remain observed.
-- Inference Engines displays vLLM if supported telemetry and mappings are available.
-- LLM Models displays the real model where discovery requirements can be met non-disruptively.
-- AI Applications only displays components supported by actual instrumentation.
-- Existing Coding Assistant application remains accessible.
-- vLLM and LiteLLM have not been restarted.
-- No change to GPU Operator, DCGM Exporter or Observability Server.
-- No duplicate telemetry scraping.
+1. NVIDIA GPU is visible on the SLES VM.
+2. NVIDIA driver initializes correctly.
+3. NVML library is accessible.
+4. vGPU license is active and usable.
+5. No GPU driver initialization errors.
+6. NVIDIA Container Toolkit and RKE2 containerd configuration are compatible.
+7. GPU Operator's driver-management settings match the actual host driver installation.
+8. NVIDIA Device Plugin can discover the GPU.
+9. Kubernetes allocatable `nvidia.com/gpu` resource is registered.
+10. No conflicting NVIDIA Device Plugin installations exist.
 
-Report:
-1. Confirmed root cause for each missing view.
-2. Changes applied.
-3. Exact metrics collected.
-4. Which GenAI sections now contain real data.
-5. What instrumentation is still necessary.
-6. Actual UI verification results.
+Investigate these possible failure categories:
 
-**Execution behavior:** Complete read-only diagnosis first, then execute safe monitoring-only fixes. Do not reinstall the existing extension or monitoring stack. Do not stop for routine missing monitoring resources. Stop only if a fix requires restarting or modifying existing applications, or if essential authorized access is unavailable.
+- NVML initialization failure.
+- GPU driver unavailable or incompatible.
+- Container runtime/CDI mismatch.
+- Device Plugin configuration error.
+- GPU discovery failure.
+- Missing required libraries or mounts.
+- vGPU licensing problem.
+- GPU Operator version/runtime compatibility.
+- Node resource pressure.
+
+Identify the **exact root cause from logs and runtime evidence** before applying a fix.
+
+## PHASE 3 — Repair only the broken component
+
+You are authorized to repair the GPU monitoring/Device Plugin configuration on `agentic-ai`.
+
+Choose the smallest supported fix for the confirmed root cause.
+
+Examples:
+
+- Correct an invalid Device Plugin configuration.
+- Repair compatible NVIDIA runtime integration.
+- Fix a missing Device Plugin-specific setting.
+- Correct GPU Operator Helm values if configuration is demonstrably wrong.
+- Repair driver-library visibility without replacing working drivers.
+- Restart/recreate only the already-failing Device Plugin pod after its underlying problem is fixed.
+
+Preserve existing NVIDIA driver, vGPU license and GPU Operator versions wherever possible.
+
+Do not blindly reinstall GPU Operator.
+
+Do not change MIG or time-slicing configuration.
+
+Do not reboot the VM.
+
+Do not restart RKE2 or containerd.
+
+Do not restart healthy inference workloads.
+
+If the root cause requires a host reboot, driver replacement, reinstallation of GPU Operator, or a change that could interrupt an active application, stop that specific disruptive action and explain the required fix.
+
+Routine monitoring and Device Plugin-specific repairs do not require additional confirmation.
+
+## PHASE 4 — Validate NVIDIA GPU availability
+
+After repair, verify:
+
+```bash
+kubectl get clusterpolicy
+kubectl get nodes -o wide
+kubectl get pods -A
+```
+
+Confirm:
+
+- Device Plugin Ready.
+- GPU Operator components healthy.
+- GPU Feature Discovery functioning.
+- GPU validator passing.
+- Node Ready.
+- `nvidia.com/gpu` allocatable and correct.
+- No recurring Device Plugin CrashLoopBackOff.
+
+Verify GPU availability inside an existing GPU workload where safe.
+
+Do not schedule an additional GPU workload if the GPU is fully allocated to vLLM.
+
+Do not perform a GPU stress test.
+
+## PHASE 5 — Validate the complete Agentic HRMS stack
+
+Discover actual namespaces and workload names rather than assuming defaults.
+
+Check:
+
+| Component | Validation |
+|---|---|
+| SUSE AI Factory vLLM | Running, Ready, model loaded, inference endpoint responding |
+| Milvus | Running, Ready, vector search endpoint accessible |
+| LiteLLM | Running, Ready, routes requests to configured vLLM |
+| FastAPI HR Agent | Running, Ready, backend API responding |
+| MCP Server | Running, HR tools discoverable and callable |
+| SQLite | Persistent database accessible |
+| Employee Portal | Accessible over HTTPS |
+| Manager Portal | Accessible over HTTPS |
+| cert-manager | Existing certificate Ready |
+| Ingress | Routes agenticai.demo.local correctly |
+
+Test:
+
+1. vLLM `/v1/models`.
+2. A minimal inference request using the configured model, if safe.
+3. LiteLLM connectivity to vLLM.
+4. Milvus policy collection availability.
+5. One non-destructive policy retrieval.
+6. MCP employee profile lookup.
+7. MCP employee leave-balance lookup.
+8. FastAPI health and application API.
+9. Employee and Manager login flows using existing authorized test credentials.
+10. Browser access to `https://agenticai.demo.local`.
+
+Do not expose credentials in logs.
+
+Do not create, approve, reject or delete HR leave records during infrastructure validation.
+
+Preserve the existing Employee/Manager workflows and SQLite data.
+
+## PHASE 6 — Confirm application stability
+
+Compare the status of existing application pods before and after repair.
+
+Verify:
+
+- Device Plugin no longer crashes.
+- No existing application has been unintentionally restarted.
+- vLLM inference works.
+- Milvus works.
+- LiteLLM works.
+- HRMS MCP works.
+- Employee/Manager UI works.
+- HTTPS remains valid.
+- No unexpected Pending, Failed or CrashLoopBackOff pods in the application namespaces.
+
+If the device plugin repair succeeds but another application has an unrelated issue, diagnose it separately and apply only a safe, targeted fix.
+
+## PHASE 7 — Final report
+
+Create:
+
+`/root/agentic-ai-gpu-repair/FINAL_REPORT.md`
+
+Include:
+
+- Actual root cause.
+- Relevant log evidence.
+- Exact configuration change made.
+- Device Plugin before/after status.
+- NVIDIA GPU and vGPU license status.
+- Node GPU allocatable count.
+- GPU Operator status.
+- vLLM and Milvus status.
+- HRMS MCP and SQLite status.
+- Employee/Manager application status.
+- HTTPS verification.
+- Any remaining issues.
+- Rollback instructions.
+
+Return a concise PASS/FAIL table.
+
+**Definition of done:** NVIDIA Device Plugin is healthy, GPU is available to Kubernetes, the complete Agentic HRMS application is functioning, and `https://agenticai.demo.local` is ready for Dell Demo Centre screenshots.
+
+Do not stop after general discovery. Diagnose the actual failure, perform the smallest safe repair and verify all relevant workloads.
+
+Do not modify any cluster other than `agentic-ai`.
