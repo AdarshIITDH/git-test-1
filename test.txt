@@ -1,518 +1,454 @@
-# SUSE OBSERVABILITY — COMPLETE PREFLIGHT AND INSTALLATION
+# TASK: Enable SUSE Observability Self-Monitoring on the Existing Downstream Cluster
 
-You are acting as a Senior SUSE Observability, Rancher Prime, RKE2, Longhorn, Kubernetes Storage, Networking, and TLS Engineer.
+You are an expert in SUSE Rancher Prime, SUSE Observability, RKE2, Kubernetes monitoring, Helm, OpenTelemetry, and troubleshooting.
 
-I have already installed Codex on my Rancher Management VM.
+I have already installed SUSE Observability Server on an existing Rancher-managed downstream RKE2 cluster.
 
-Your job is to connect to my existing Rancher-managed downstream cluster named **observability**, inspect its complete environment, validate every requirement, safely fix non-destructive configuration issues, and install SUSE Observability Server only when the mandatory preflight checks have passed.
+The SUSE Observability UI is accessible at:
 
-Do not merely provide an installation guide. Execute the tasks you can perform, validate every action, and give factual results.
+**https://observability.demo.local**
 
-## 1. Environment and strict cluster separation
+However, no Kubernetes cluster metrics are currently visible.
 
-### Rancher Management VM
+Your task is to install or repair the SUSE Observability Kubernetes Agent **on the same downstream cluster where the Observability Server is installed**, connect the agent to the existing server, and make all standard supported Kubernetes infrastructure metrics visible.
 
-This is where Codex is currently running.
+Execute the necessary changes and perform actual verification. Do not stop after producing instructions.
 
-Use this VM for:
-- Rancher API access
-- Kubernetes administration using the downstream kubeconfig
-- Helm commands
-- Preflight scripts
-- Generating Kubernetes manifests and configuration
-- Running validation tests
-- Preparing reports
+## 1. Environment
 
-**Never install SUSE Observability Server, Longhorn, cert-manager, Ingress Controller, or application workloads in Rancher's `local` management cluster.**
+Codex execution machine:
+- Rancher Management VM
+- Rancher Prime already installed
+- Connected downstream clusters are visible through Rancher
+- kubectl, Helm, Rancher API and available kubeconfig files may be used
 
-Do not modify Rancher management components unless a specific change is required for future integration and I have explicitly authorized it.
-
-### Target downstream cluster
-
+Target downstream cluster:
 - Rancher cluster name: `observability`
-- Cluster type: RKE2
-- Node count: 1
-- Approximate CPU: 32 vCPU
-- Approximate RAM: 47 GB
-- Longhorn disk: approximately 400 GB at `/home/longhorn`
-- Desired SUSE Observability sizing: `10-nonha`
-- Namespace: `suse-observability`
-- Required UI: `https://observability.demo.local`
-- DNS record: Already configured
-- TLS: cert-manager-managed private CA certificate
-- Purpose: Lightweight central observability lab
+- Kubernetes: RKE2
+- Nodes: 1
+- CPU: 32 vCPU
+- Memory: approximately 47 GB
+- Storage: Longhorn, approximately 400 GB
+- SUSE Observability Server: Already installed and working
+- Server URL: `https://observability.demo.local`
+- Server namespace: `suse-observability`
+- TLS: cert-manager-managed certificate signed by a private CA
+- Desired monitored cluster name: `observability`
 
-This server will eventually monitor five downstream Kubernetes clusters, four of which have NVIDIA GPUs.
+Agent namespace:
 
-**Important: This task covers only the SUSE Observability Server installation. Do NOT install any Observability Agents in the other clusters yet. Do NOT modify those five clusters.**
+`suse-observability-agent`
 
-## 2. Mandatory execution rules
+**VERY IMPORTANT:**
 
-1. Never use the currently selected kubeconfig blindly.
-2. Locate the Rancher downstream cluster `observability` and obtain its authorized kubeconfig.
-3. Confirm actual cluster identity before every write operation.
-4. Prefer a dedicated kubeconfig file and explicit `--kubeconfig` and `--context` flags in deployment scripts.
-5. Do not use Rancher `local` as the deployment target.
-6. Do not create a new RKE2 cluster.
-7. Do not reinstall healthy existing components.
-8. Do not delete or modify existing PVCs/PVs.
-9. Do not modify the default StorageClass globally.
-10. Do not run destructive cleanup commands.
-11. Do not disable TLS verification.
-12. Do not use fake or placeholder credentials for actual installation.
-13. Do not put license keys, passwords or private keys into logs or Git.
-14. Stop installation if a critical requirement cannot be fulfilled safely.
-15. After safe remediation, rerun failed checks before proceeding.
-16. Use official SUSE documentation and inspect actual chart values rather than assuming Helm configuration field names.
-17. Preserve unrelated namespaces and workloads.
+The Rancher Management VM is only the execution environment.
 
-## PHASE 1 — Rancher access and Kubernetes context discovery
+All Kubernetes monitoring agents must be deployed into the downstream `observability` cluster.
 
-From the Rancher Management VM:
+Do not install any agents or workloads on Rancher's `local` management cluster.
 
-- Identify the currently configured Rancher server.
-- Find downstream cluster named exactly `observability`.
-- Determine its actual Rancher cluster ID.
-- Obtain or locate its kubeconfig using authorized credentials.
-- Verify API connectivity.
-- Verify Kubernetes server version.
-- Verify node name and internal/external IP.
-- Verify node readiness and scheduling conditions.
-- Inspect node taints and events.
-- Verify node OS and architecture.
-- Verify the real cluster is not Rancher `local`.
+Do not modify the other downstream clusters.
 
-Use read-only checks such as:
+## 2. Phase 1 — Verify the correct cluster
 
-```bash
-kubectl config get-contexts
-kubectl cluster-info
-kubectl get nodes -o wide
-kubectl describe nodes
-kubectl get namespaces
-kubectl get events -A --sort-by=.lastTimestamp
-```
-
-Use the verified downstream context for all commands.
-
-Save a safe cluster identity record in the deployment report.
-
-Acceptance:
-- Correct downstream cluster identified
-- API reachable
-- Node Ready
-- Node schedulable
-- No critical DiskPressure or MemoryPressure
-- No blocking admission webhook failures
-
-## PHASE 2 — CPU, RAM, disk and Longhorn validation
-
-Inspect actual node allocatable resources, not only advertised VM specifications.
-
-Check:
-- Node allocatable CPU and memory
-- Existing workload resource requests
-- Available CPU and RAM headroom
-- Current system pods and their requirements
-- Actual disk mounts and filesystems
-- `/home/longhorn` backing filesystem
-- Longhorn configured default data path
-- Available storage capacity
-- Longhorn reserved capacity
-- Longhorn available schedulable storage
-- Existing Longhorn volumes and current storage consumption
-- PVCs and PVs
-- StorageClasses and replica settings
-- Longhorn CSI driver and provisioners
-- Longhorn node/disk health
-- Disk type and performance characteristics
-
-Verify that the 400 GB disk is actually used by Longhorn.
-
-Do not infer this only from the existence of the directory `/home/longhorn`.
-
-### Storage requirements
-
-Preferred installation profile: `10-nonha`.
-
-The published default persistent storage requirement is approximately 335 GiB.
-
-Check whether the actual usable Longhorn capacity can safely accommodate the required PVCs with sufficient free-space headroom.
-
-This is a single-node lab, so there are no independent failure domains for Longhorn replica redundancy.
-
-A dedicated single-replica StorageClass may be used only if technically compatible, with the data-loss risk clearly documented.
-
-Do not change existing volumes to one replica.
-
-If default PVC allocations do not fit:
-- Review the official SUSE Observability storage customization documentation.
-- Inspect actual chart-supported storage overrides.
-- Investigate documented shorter-retention configurations suitable for a short-lived lab.
-- Model the required PVC capacities before creating anything.
-- Keep reasonable free-space headroom for Longhorn and database growth.
-- Do not arbitrarily shrink critical database PVCs.
-- Do not switch to a smaller profile silently.
-- If a safe 10-nonha storage configuration cannot be established, report the blocker and stop before server installation.
-
-The `10-nonha` profile must remain the preferred choice unless I explicitly approve changing it.
-
-Record that this single-node Longhorn arrangement is lab-only and does not provide the durable multi-node storage configuration recommended by SUSE.
-
-Acceptance:
-- Sufficient allocatable CPU and memory
-- Longhorn healthy
-- Compatible StorageClass
-- Storage requirements calculated
-- All projected PVCs can be provisioned
-- Adequate free capacity remains
-
-## PHASE 3 — Network, DNS, ingress and TLS prerequisites
-
-Required UI endpoint:
-
-`https://observability.demo.local`
-
-The DNS record already exists.
-
-Verify:
-- DNS resolution from Rancher Management VM
-- DNS resolution from the downstream cluster
-- Resolved IP belongs to the intended downstream ingress endpoint
-- Downstream ingress network accessibility
-- TCP 80/443 connectivity where required
-- Existing ingress controller
-- IngressClass and controller version
-- Existing host/path conflicts
-- cert-manager installation status
-- cert-manager CRDs and webhook health
-- Available internal DNS access for future agents
-- Rancher Management VM connectivity to the future Observability URL
-
-Do not create a duplicate ingress controller.
-
-If no ingress controller exists, install a compatible supported controller only in the `observability` downstream cluster.
-
-Avoid conflicts with existing RKE2 ingress components.
-
-### TLS requirements
-
-Use cert-manager to manage a private CA and leaf certificate.
-
-If cert-manager is already healthy, reuse it.
-
-Otherwise, install a currently compatible cert-manager release in the downstream cluster.
-
-Create:
-- Bootstrap self-signed Issuer
-- Private CA Certificate
-- CA Issuer
-- TLS Certificate for `observability.demo.local`
-- TLS Secret in namespace `suse-observability`
-
-The certificate must contain the exact DNS SAN `observability.demo.local`.
-
-Configure automatic certificate renewal.
-
-Do not export the private CA key.
-
-Export only the public CA certificate for trusted clients.
-
-Plan for:
-- Windows browser CA trust
-- Rancher UI extension CA trust
-- Future Observability Agent CA trust
-
-Do not modify Rancher management-cluster CA configuration during this task without explicit approval.
-
-Acceptance:
-- Correct DNS resolution
-- Ingress/controller connectivity available
-- cert-manager healthy or safely installable
-- TLS issuance mechanism verified
-- No hostname conflict
-
-## PHASE 4 — SUSE Observability software prerequisites
-
-Verify all installation prerequisites.
-
-Check:
-- Helm installed and supported version, minimum 3.13.1
-- Correct chart repository reachability
-- Access to required container registries
-- Kubernetes version compatibility
-- Rancher version compatibility
-- RBAC permissions
-- Storage provisioner availability
-- SLES/RKE2 compatibility
-- Network policies
-- Cluster resource quotas
-- Existing Helm installations
-- Whether SUSE Observability is already installed
-- Required license availability
-- Administrator credentials availability
-
-Official Helm repository:
-
-```bash
-helm repo add suse-observability \
-  https://charts.rancher.com/server-charts/prime/suse-observability
-
-helm repo update
-```
-
-Inspect the chart:
-
-```bash
-helm search repo suse-observability/suse-observability
-helm show chart suse-observability/suse-observability
-helm show values suse-observability/suse-observability
-```
-
-Inspect the actual chart version, default PVCs, storage override keys, ingress schema, services, resource requirements and installed dependencies.
-
-Use the modern `global.suseObservability` configuration if supported by the selected chart version.
-
-Get the license securely from an already authorized source or request it from me. Do not invent a license.
-
-Generate or securely obtain a strong administrator password. Do not use `1234`.
-
-Do not print credentials into terminal logs, reports or shell history.
-
-### Helm preflight
-
-Prepare candidate values for:
-
-- `global.suseObservability.license`
-- `global.suseObservability.baseUrl`
-- `global.suseObservability.sizing.profile`
-- `global.suseObservability.adminPassword` or `adminPasswordBcrypt`
-- `global.storageClass`
-- Chart-supported ingress configuration
-- Chart-supported storage tuning, if necessary
-
-Render all manifests locally with `helm template`.
-
-Inspect:
-- Workload resource requests and limits
-- Total PVC requests
-- Expected StorageClasses
-- Service names and ports
-- Ingress host and TLS Secret
-- Scheduling constraints
-- StatefulSets
-- Secrets and permissions
-- All chart validation errors
-
-Do not install at this phase.
-
-## PHASE 5 — Formal preflight GO/NO-GO
-
-Create the report:
-
-`/root/observability-deployment/PREFLIGHT_REPORT.md`
-
-Include this checklist with actual observed values and evidence:
-
-| Check | Actual value | PASS/FAIL | Explanation |
-|---|---|---|---|
-| Correct cluster | | | |
-| API access | | | |
-| Node Ready | | | |
-| RKE2 compatibility | | | |
-| CPU available | | | |
-| Memory available | | | |
-| Longhorn disk | | | |
-| Longhorn usable capacity | | | |
-| Projected PVC usage | | | |
-| StorageClass | | | |
-| DNS | | | |
-| Ingress Controller | | | |
-| cert-manager | | | |
-| Helm | | | |
-| SUSE chart repository | | | |
-| Container registry | | | |
-| License | | | |
-| Admin credentials | | | |
-| Rendered Helm manifests | | | |
-
-Every check must have factual evidence.
-
-If a prerequisite is missing:
-- Diagnose the reason.
-- Safely remediate it where possible.
-- Rerun the check.
-- If unresolved, mark NO-GO and stop installation.
-
-For destructive operations or changes to Rancher management resources, request my approval.
-
-**Only proceed to SUSE Observability Server installation when all mandatory installation checks are PASS.**
-
-## PHASE 6 — Deploy SUSE Observability Server
-
-Target cluster:
+Discover the Rancher downstream cluster named exactly:
 
 `observability`
 
-Namespace:
+Find its actual cluster ID and kubeconfig.
 
-`suse-observability`
+Inspect:
+- Current kubectl contexts
+- Actual cluster API endpoint
+- Kubernetes nodes
+- Node IP addresses
+- Existing namespaces
+- SUSE Observability Server pods
+- Existing Helm releases
+- CPU and RAM allocatable capacity
+- Available memory and resource requests
+- Current pod health
+- Network connectivity
+- Existing agent installations
 
-Helm release:
+Confirm that the target context is the downstream `observability` cluster and not Rancher `local`.
 
-`suse-observability`
+Use a dedicated downstream kubeconfig or explicitly selected context for every kubectl and Helm operation.
 
-Preferred profile:
+Do not write anything until cluster identity is verified.
 
-`10-nonha`
+## 3. Phase 2 — Check the existing SUSE Observability Server
 
-Public URL:
+Do not reinstall or upgrade the Observability Server.
+
+Inspect:
+- Existing Helm release
+- Installed Observability version
+- Server pods and readiness
+- Ingress
+- TLS certificate
+- Internal router service
+- Ingestion service
+- Existing license status
+- Available server capacity
+- Existing Kubernetes StackPack instances
+- Existing service tokens, without displaying token values
+
+Verify that:
 
 `https://observability.demo.local`
 
-Create the namespace in the verified downstream context.
+is reachable from the management VM and from a pod running inside the downstream `observability` cluster.
 
-Use the official SUSE Observability Helm chart.
+Check DNS, port 443, certificate chain and ingestion API connectivity.
 
-Use the latest compatible stable chart verified during preflight, not an unverified chart version.
+Do not disable TLS certificate validation.
 
-Configure:
-- Correct base URL
-- Real valid license
-- Strong administrator authentication
-- `10-nonha` sizing
-- Verified StorageClass
-- Verified storage overrides if needed
-- Internal router service
-- Chart-managed Ingress
-- TLS Secret issued by cert-manager
+If server pods are unhealthy, diagnose the underlying problem before installing the agent.
 
-Only expose the public Observability router through HTTPS.
+## 4. Phase 3 — Create or verify Kubernetes StackPack
 
-Do not publicly expose databases, Elasticsearch, Kafka, ClickHouse, VictoriaMetrics or other internal backend services.
+Use the existing SUSE Observability UI.
 
-Use the chart's actual ingress schema. Do not assume `ingressClassName` is supported if the selected chart expects `ingress.class`.
+Navigate to:
 
-Prefer chart-managed Ingress rather than an overlapping manually created Ingress.
+SUSE Observability → StackPacks → Kubernetes
 
-Deploy using Helm and the dedicated downstream kubeconfig/context.
+Check whether a Kubernetes StackPack instance already exists with the name:
 
-Record the exact release and chart version.
+`observability`
 
-Do not remove/recreate the installation if a release already exists. Investigate existing state before deciding on any upgrade.
+If it exists, reuse it.
 
-## PHASE 7 — Validate the deployment
+Do not create a duplicate instance.
 
-Verify:
-- Helm release is deployed
-- Required pods Ready
-- StatefulSets Ready
-- Services available
-- All PVCs Bound
-- Longhorn volumes healthy
-- No persistent CrashLoopBackOff
-- No unexplained Pending pods
-- No OOMKilled events
-- No disk-pressure issues
-- Resource utilization within acceptable limits
-- Observability router responding
-- Ingress configured correctly
-- TLS certificate Ready
-- TLS renewal configured
+If missing, create a new Kubernetes StackPack instance using exactly:
 
-Check the HTTP/HTTPS endpoint from the Rancher Management VM.
+Cluster Name: `observability`
 
-Use certificate validation with the private CA.
+Do not use `obs` or another alias.
 
-Do not treat `curl -k` as a successful TLS security validation.
+The following three names must match:
 
-Verify:
-- DNS resolves correctly
-- HTTPS certificate matches the hostname
-- Router returns the expected UI
-- Authentication works
-- Admin can log in
-- Dashboard renders
-- No reverse proxy or origin errors
+1. Rancher cluster display name: `observability`
+2. SUSE Observability Kubernetes StackPack name: `observability`
+3. Agent configuration `stackstate.cluster.name`: `observability`
 
-If browser tooling is available, run actual browser tests.
+Follow the installed SUSE Observability version's official StackPack installation workflow.
 
-If the browser cannot be used automatically, verify HTTP/API behavior and provide the exact remaining manual browser check.
+Use the agent installation instructions generated by the actual StackPack.
 
-## PHASE 8 — Rancher integration readiness
+If Codex cannot interact with the SUSE Observability UI or authenticated API, show me the exact required UI actions and identify the generated Helm configuration it needs. Resume installation when those details are available.
 
-Do not install agents yet.
+Do not fabricate a service token or ingestion endpoint.
 
-Verify that the Observability Server URL can be reached by the Rancher Management VM.
+## 5. Phase 4 — Install the SUSE Observability Kubernetes Agent
 
-Determine whether the SUSE Observability Rancher UI extension is already present.
+Use the official, version-compatible Helm chart:
 
-If the extension is present:
-- Check its compatibility
-- Check connectivity and TLS trust
-- Identify any allowed-origin configuration requirements
+`suse-observability/suse-observability-agent`
 
-If not present:
-- Document the exact extension installation procedure
-- Do not modify the management cluster automatically
+Repository:
 
-Private CA trust must be configured correctly for the extension and, later, the agents.
+https://charts.rancher.com/server-charts/prime/suse-observability
 
-Prepare an agent-onboarding plan for the five downstream clusters, but do not execute it.
+Install the Agent on downstream cluster `observability` in namespace:
 
-For later GPU monitoring, document the prerequisites for NVIDIA DCGM Exporter and SUSE Observability OpenTelemetry scraping. Do not configure GPU agents during this phase.
+`suse-observability-agent`
 
-## PHASE 9 — Final report and handover
+Required agent components:
 
-Save all deployment artifacts on the Rancher Management VM under:
+- SUSE Observability Node Agent
+- Kubernetes Cluster Agent
+- Kubernetes Checks Agent
+- kube-state-metrics
+- Other required components enabled by the official chart for standard Kubernetes monitoring
 
-`/root/observability-deployment/`
+If an agent is already installed, inspect it and repair or upgrade its configuration without deploying duplicates.
 
-Create:
+Use the exact ingestion endpoint and credentials generated for the Kubernetes StackPack.
 
-1. `PREFLIGHT_REPORT.md`
-2. `INSTALLATION_VALUES.yaml` or secure values reference
-3. `STORAGE_CAPACITY_REPORT.md`
-4. `DEPLOYMENT_REPORT.md`
-5. `TLS_CERT_MANAGER.md`
-6. `VALIDATION_REPORT.md`
-7. `RANCHER_INTEGRATION.md`
-8. `AGENT_ONBOARDING_PLAN.md`
-9. `ROLLBACK.md`
+Do not reuse the Rancher Observability UI extension token unless the installed product documentation explicitly allows that use.
 
-Do not put passwords, license keys, kubeconfig credentials or private keys into reports.
+Ensure the configuration includes the correct cluster identity:
 
-Include actual commands executed and validation results.
+`stackstate.cluster.name: observability`
 
-### Final completion requirements
+Use the documented Helm values for the installed agent chart.
 
-I should have:
+### TLS configuration
 
-- SUSE Observability installed only on downstream `observability`
-- `10-nonha` or an explicitly approved alternative
-- Healthy Helm release
-- Healthy Persistent Volumes
-- cert-manager-managed HTTPS
-- Working `https://observability.demo.local`
-- Successful admin login
-- No blocking errors
-- Preflight and validation reports
-- A prepared, but not executed, five-cluster agent installation plan
+The Observability Server uses a private CA certificate managed by cert-manager.
 
-### Final instruction
+Discover the actual CA certificate from the existing downstream TLS configuration.
 
-Begin with read-only discovery from the Rancher Management VM.
+Export only the public CA certificate.
 
-Check all existing connections and requirements before installing anything.
+Configure agent certificate trust with the supported:
 
-Complete safe non-destructive prerequisite remediation where necessary.
+`global.customCertificates`
 
-Do not deploy SUSE Observability until the formal GO/NO-GO preflight is PASS.
+Helm configuration.
 
-Use the **observability downstream cluster exclusively**.
+Prefer a dedicated ConfigMap containing the trusted CA certificate if supported by the installed chart.
 
-Do not install any of the five remote-cluster agents yet.
+Never export or distribute CA private keys.
 
-At completion, report the real server URL, installation status, storage consumption and remaining capacity, and any unresolved issues.
+Never disable TLS verification.
 
-Do not claim success unless the system has actually been tested.
+### Security and operational constraints
+
+- The agent may require privileged DaemonSet permissions; verify the official chart's requirements.
+- Confirm ServiceAccount and ClusterRole permissions.
+- Do not alter the Observability Server Helm release.
+- Do not delete PVCs or PVs.
+- Do not replace the existing ingress.
+- Do not modify Longhorn configuration.
+- Do not install a second Prometheus monitoring stack.
+- Do not create duplicate kube-state-metrics deployments if a compatible existing installation can be reused safely.
+- Avoid enabling unnecessary high-volume log collection or application tracing.
+- Monitor the single-node server's resource headroom while deploying the agent.
+
+## 6. Phase 5 — Enable standard Kubernetes metrics
+
+I want real infrastructure metrics from the `observability` cluster.
+
+Collect and validate the supported standard metrics for:
+
+### Cluster
+
+- Cluster health
+- Node Ready status
+- Total CPU capacity and allocatable CPU
+- Total memory capacity and allocatable memory
+- CPU and memory utilization
+- Pod counts
+- Running, Pending, Failed and Restarting pods
+- Deployment and StatefulSet health
+- Kubernetes events
+
+### Node
+
+- CPU usage
+- Memory usage
+- Memory available
+- Filesystem usage and available space
+- Disk I/O metrics, where supported
+- Network received/transmitted bytes
+- Node conditions
+- CPU and memory resource pressure
+
+### Pods and containers
+
+- Container CPU usage
+- Container memory working set
+- Container restart count
+- Container resource requests and limits
+- Pod readiness
+- Pod status
+- Container filesystem metrics, where supported
+
+### Storage
+
+- PVC status and capacity
+- Persistent volume health
+- Storage usage where exposed by the collection pipeline
+- Longhorn-specific metrics only if an exporter and supported collection configuration already exist
+
+### Kubernetes workloads
+
+- Deployment replicas
+- StatefulSet replicas
+- DaemonSet availability
+- Pod scheduling
+- Namespace-level CPU and memory utilization
+- Kubernetes object topology and relationships
+
+Verify that the actual agent chart enables the necessary collectors, kubelet/cAdvisor integration and Kubernetes-state collection.
+
+If metrics are missing, investigate collection configuration, endpoint access, RBAC, TLS, network policy, filtering and ingestion.
+
+Do not create fake metrics.
+
+Do not claim that optional metrics exist unless they are actually being collected.
+
+For this phase, GPU monitoring, custom application tracing and extensive application log ingestion are out of scope.
+
+## 7. Phase 6 — Validate telemetry ingestion
+
+After deploying the agent, check:
+
+- Node Agent Ready
+- Cluster Agent Ready
+- Checks Agent Ready
+- kube-state-metrics Ready
+- No CrashLoopBackOff
+- No RBAC errors
+- No certificate errors
+- No DNS resolution failures
+- No authentication errors
+- No ingestion rejection errors
+
+Inspect agent logs.
+
+Verify that metrics are actually reaching the SUSE Observability Server.
+
+Do not rely only on Kubernetes pod Running status.
+
+Check the Kubernetes StackPack status.
+
+Expected cluster identity:
+
+`observability`
+
+Expected connection state:
+
+Data received / Observed / Healthy, according to the installed UI terminology.
+
+If the cluster is marked Unobserved, investigate:
+
+- Cluster naming mismatch
+- Incorrect ingestion URL
+- Incorrect credentials
+- Certificate trust
+- Missing cluster topology data
+- Failed metrics pipeline
+
+Fix the actual cause and retest.
+
+## 8. Phase 7 — Verify metrics in the Observability UI
+
+Open:
+
+https://observability.demo.local
+
+Verify the following user journey:
+
+1. Log into SUSE Observability.
+2. Navigate to Kubernetes.
+3. Open Clusters.
+4. Select `observability`.
+5. Verify cluster status and topology.
+6. Open the single Kubernetes node.
+7. Verify CPU and memory utilization charts contain recent data.
+8. View namespaces and running workloads.
+9. Open Pod details and confirm available CPU/memory metrics.
+10. Open Kubernetes events.
+11. Check deployment health.
+12. Open Metrics Explorer.
+13. Query real collected Kubernetes/node/container metrics.
+
+Do not assume fixed metric names. Discover available names in Metrics Explorer or the actual backend and run queries using those names.
+
+Confirm at least these metrics with real recent data:
+
+- Node CPU utilization
+- Node memory utilization
+- Pod/container CPU utilization
+- Pod/container memory utilization
+- Kubernetes object state or pod status
+- Container restarts or node/network metrics
+
+If metrics have been successfully ingested but particular built-in UI charts remain empty, investigate metric mapping, tags, filters, time range and topology association.
+
+Use only real collected metrics.
+
+Do not create fake dashboards or synthetic data.
+
+If browser automation is unavailable, perform backend/API verification where supported and tell me precisely which UI screens I need to verify manually.
+
+## 9. Phase 8 — Rancher UI extension verification
+
+The SUSE Observability extension is already connected to Rancher.
+
+Verify that:
+
+- Rancher knows the downstream cluster as `observability`.
+- SUSE Observability uses the same cluster name.
+- The cluster is recognized as observed.
+- Cluster health and related monitoring links work through the Rancher extension.
+- Existing extension connectivity remains functional.
+
+Do not reinstall the extension.
+
+Do not change Rancher management-cluster workloads.
+
+## 10. Phase 9 — Final validation
+
+Perform all checks:
+
+1. Correct downstream cluster selected.
+2. Existing SUSE Observability Server remains healthy.
+3. Kubernetes StackPack named `observability` exists.
+4. Agent Helm release installed and healthy.
+5. Node Agent operational.
+6. Cluster Agent operational.
+7. Checks Agent operational.
+8. kube-state-metrics operational.
+9. TLS authentication works.
+10. Telemetry ingestion works.
+11. `observability` cluster is visible in SUSE Observability.
+12. Node metrics display actual data.
+13. Pod metrics display actual data.
+14. Cluster health data is visible.
+15. Kubernetes object relationships are visible.
+16. Metrics Explorer returns actual recent measurements.
+17. Rancher UI extension recognizes the cluster.
+18. No unrelated cluster was modified.
+19. No unnecessary duplicate monitoring components were installed.
+20. Observability Server resource consumption remains acceptable.
+
+## 11. Deliverables
+
+Create on the Rancher Management VM:
+
+`/root/observability-self-monitoring/`
+
+Save:
+
+- `DISCOVERY.md`
+- `AGENT_INSTALLATION.md`
+- `AGENT_VALUES.yaml` or a redacted values reference
+- `METRICS_VALIDATION.md`
+- `UI_NAVIGATION.md`
+- `TROUBLESHOOTING.md`
+- `FINAL_REPORT.md`
+
+Exclude service tokens, secret values, kubeconfig credentials and private keys from reports.
+
+The final report must contain:
+
+- Cluster name
+- Agent namespace
+- Agent Helm release and version
+- Agent pod status
+- Ingestion connectivity status
+- Exact metrics verified
+- Relevant UI navigation
+- Existing issues and limitations
+- Commands for troubleshooting
+- Real validation results
+
+## FINAL DEFINITION OF DONE
+
+Task is complete when I can open:
+
+https://observability.demo.local
+
+Then:
+
+Kubernetes → Clusters → observability → Node
+
+And see **real CPU, memory, pod and Kubernetes health metrics**.
+
+I should also be able to use Metrics Explorer to inspect collected metrics.
+
+The cluster must be visible and recognized in the Rancher SUSE Observability extension.
+
+Do not install agents on any other cluster.
+
+Do not configure NVIDIA DCGM metrics yet.
+
+Do not reinstall SUSE Observability Server.
+
+Start immediately by discovering the correct downstream `observability` cluster and existing monitoring configuration. Execute the installation and troubleshooting safely, and verify the actual results.
