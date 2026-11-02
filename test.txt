@@ -1,46 +1,27 @@
-Continue the SAME coding-assistant SUSE Observability onboarding task. Do not start over.
+TASK: Enable NVIDIA GPU metrics in the existing SUSE Observability installation.
 
-You have already completed discovery and identified:
+Do not repeat cluster discovery or reinstall any agents.
 
-- Rancher cluster: `coding-assistant`
-- Kubernetes node: `aicodeassistant`
-- Dedicated kubeconfig: `/root/coding-assistant-aif-migration/kubeconfig.json`
-- Rancher cluster ID: `c-m-c4mljzqm`
-- NVIDIA GPU Operator: Running
-- DCGM Exporter: Running
-- vLLM and LiteLLM: Running
-- Central Observability: `https://observability.demo.local`
+Already working:
+- Central Observability: https://observability.demo.local
+- Observed clusters: observability and coding-assistant
+- coding-assistant Agent is installed and connected; RBAC and CA trust issues are fixed
+- Existing NVIDIA L40S-16Q DCGM Exporter already exposes real utilization and framebuffer metrics
 
-You stopped unnecessarily after discovery.
+Only target:
+coding-assistant
+Kubeconfig: /root/coding-assistant-aif-migration/kubeconfig.json
 
-**Do not treat baseline snapshots as a blocker.** I only need read-only Kubernetes application-state records, not VM snapshots, disk snapshots or backups.
+EXECUTE:
 
-Proceed as follows:
+1. Inspect actual DCGM Service labels, metrics port and currently exposed metric names in gpu-operator.
+2. Check ServiceMonitor CRDs. If absent, enable their chart-supported installation through the EXISTING SUSE Observability Agent Helm release.
+3. Enable otel.enabled and otel.prometheusScraping.enabled, disable unnecessary OTel subcomponents, and preserve ALL existing agent Helm values including valid API key, cluster name, receiver URL and private CA trust. Pin existing chart version; no unrelated upgrades.
+4. Create ONE dedicated ServiceMonitor with observability.suse.com/agent=scrape, targeting the existing DCGM Service by its actual verified labels and port, using 60s scrape interval.
+5. Validate OTel scraper and Target Allocator health, discovered target, successful scraping and backend ingestion.
+6. In https://observability.demo.local Metrics Explorer, verify actual GPU utilization, framebuffer used/free and any available temperature/power metrics. Inspect real labels and scope queries only to coding-assistant.
+7. Create a saved dashboard called 'COD - NVIDIA GPU Monitoring' with real GPU utilization, memory used/free, temperature/power where available, plus node CPU and RAM. Use installed-version-supported UI/API features. If dashboard creation requires browser authorization, provide only that precise manual step.
+8. Verify standard monitoring for both clusters still works.
+9. Confirm existing vLLM, LiteLLM, DCGM Exporter and GPU Operator pods were not restarted or changed.
 
-1. Run the remaining read-only checks automatically. Save a brief before-state of running pods, readiness, restart counts and GPU workloads.
-2. Verify DNS, HTTPS, private CA trust and ingestion connectivity from `coding-assistant` to `observability.demo.local`.
-3. Inspect the existing DCGM Exporter's actual `/metrics` endpoint, labels and ServiceMonitor configuration.
-4. Check or create the Kubernetes StackPack instance named exactly `coding-assistant` using supported Observability APIs or UI.
-5. Obtain its actual agent ingestion credentials securely. Do not invent tokens. If UI interaction is genuinely necessary, give me that specific action.
-6. Install the compatible SUSE Observability Agent ONLY on downstream `coding-assistant` in namespace `suse-observability-agent`.
-7. Enable lightweight OpenTelemetry scraping for the existing DCGM Exporter using its actual Service and port. Do not reinstall or restart GPU Operator.
-8. Verify Kubernetes CPU, memory, pods, node and storage metrics.
-9. Verify NVIDIA GPU utilization, VRAM, temperature and power metrics are ingested.
-10. Verify results in Observability Metrics Explorer and create a reusable GPU metrics view if supported.
-11. Compare application status before and after. Confirm vLLM, LiteLLM and `https://aicodeassistant.demo.local` remain working.
-12. Save the final validation report.
-
-**Execution rules:**
-
-- Do not ask me for confirmation between routine phases.
-- Do not stop simply because an inspection is not yet completed; complete it.
-- Do not perform unnecessary VM snapshots or backups.
-- Do not interrupt any running application.
-- Do not modify the Rancher local cluster or other downstream clusters.
-- Do not reinstall the existing Observability Server.
-- Do not restart GPU Operator, vLLM or LiteLLM.
-- Stop only for genuinely missing credentials, required manual UI authentication, a verified unsafe change or a technical blocker you cannot safely resolve.
-
-Continue execution now, not another planning or discovery-only response.
-
-The goal is a working `coding-assistant` cluster with real Kubernetes and GPU metrics in the existing SUSE Observability UI.
+DO NOT touch Observability Server, Rancher local cluster, existing applications or GPU Operator. No VM snapshots, model stress tests, or repeated discovery reports. Make the monitoring-only changes and provide a PASS/FAIL result including actual query evidence.
