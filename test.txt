@@ -1,25 +1,52 @@
-Continue the previous STRICTLY READ-ONLY investigation on the Rancher-managed Digital AI Assistant downstream cluster.
+Continue investigating the existing Digital AI Assistant downstream cluster.
 
-Focus ONLY on why Ollama reports zero GPU VRAM even though nvidia-smi detects the NVIDIA L40S-16Q vGPU.
+Perform ONE controlled Ollama inference diagnostic to identify why GPU inference is falling back to CPU.
 
-Do not modify anything, restart pods, run inference, preload models, patch settings, or change Helm values. Use explicitly pinned downstream-cluster kubeconfig/context for every Kubernetes command. Do not disclose credentials.
+Target:
+- Namespace: ollama-system
+- Workload: digitalassistant-ollama
+- Model: gpt-oss:20b
+- GPU: NVIDIA L40S-16Q vGPU (16 GiB)
 
-Investigate:
-1. Determine exactly which Ollama version and container image are running.
-2. Check the actual Ollama server process environment: CUDA_VISIBLE_DEVICES, NVIDIA_VISIBLE_DEVICES, NVIDIA_DRIVER_CAPABILITIES, LD_LIBRARY_PATH, OLLAMA_LLM_LIBRARY, and OLLAMA_KEEP_ALIVE.
-3. Inspect actual Ollama backend installation paths including /usr/lib/ollama/cuda_v12 and /var/lib/ollama/cuda_v12.
-4. Confirm whether libcuda.so.1, libnvidia-ml.so.1, and required CUDA runner dependencies are available through the runtime dynamic linker.
-5. Check /dev/nvidia*, particularly /dev/nvidia-uvm, and GPU Operator/device-plugin configuration.
-6. Determine whether NVIDIA_VISIBLE_DEVICES=void is expected in this Kubernetes deployment with device plugin/CDI injection or is preventing CUDA compute access.
-7. Examine existing Ollama logs for the exact error responsible for zero detected VRAM and CPU fallback. Distinguish CUDA library-loading failure, driver/API failure, device permission failure, and memory allocation failure.
-8. Determine whether OLLAMA_KEEP_ALIVE is currently five minutes and whether Liz requests override keep_alive, using only accessible non-sensitive configuration/log evidence.
-9. Explain whether the observed CUDA path mismatch is actually causal or merely coincidental.
+Rules:
+- Do NOT modify Kubernetes resources, Helm values, environment variables, or files.
+- Do NOT restart pods, drivers, GPU Operator, or Ollama.
+- Do NOT download models or install packages.
+- Do NOT change NVIDIA_VISIBLE_DEVICES or LD_LIBRARY_PATH.
+- Use the verified downstream cluster context.
+- One test inference is permitted; acknowledge that it temporarily loads the existing model into memory.
 
-Return:
-- Exact evidence for CUDA discovery failure
-- Root cause: CONFIRMED / LIKELY / UNKNOWN
-- Whether GPU is currently usable by Ollama (not just nvidia-smi)
-- Safest supported corrective configuration proposal for the installed SUSE image
-- Whether KEEP_ALIVE=-1 plus startup preload would satisfy permanent model residency
+Tasks:
 
-Do not apply any fix. Finish with findings only.
+1. Capture Ollama's current GPU discovery logs.
+2. Record nvidia-smi memory and device status.
+3. Send ONE short inference request to the existing Ollama server using gpt-oss:20b and keep_alive=5m.
+4. Record whether inference succeeds.
+5. Immediately run ollama ps and nvidia-smi.
+6. Inspect new Ollama logs for:
+   - CUDA discovery
+   - GPU enumeration
+   - GPU VRAM detection
+   - Backend selection
+   - Model layer offloading
+   - CPU fallback
+   - CUDA initialization errors
+7. Report whether the model loaded:
+   - 100% GPU
+   - Partial GPU/CPU
+   - 100% CPU
+   - Failed to load
+8. Correlate the inference result with relevant server logs.
+9. If logs lack details, explain exactly which diagnostic logging settings would be needed in a later maintenance window.
+
+Do not apply fixes.
+
+Final report:
+- GPU detection result
+- Exact inference backend selected
+- GPU and CPU residency percentages
+- Relevant error messages
+- Most likely root cause
+- Smallest proposed fix, not implemented
+
+Clearly separate confirmed facts from hypotheses.
