@@ -1,4 +1,167 @@
-EXECUTE NOW. NO MORE OLD PVC RECOVERY OR INVESTIGATION LOOPS.
+TASK: MOVE OLLAMA INFERENCE FROM KUBERNETES TO NATIVE GPU VM.
+
+EXECUTE THE TASK. NO LENGTHY INVESTIGATION OR PLANNING REPORTS.
+
+Environment:
+- Rancher management VM has Codex and credentials.
+- Downstream cluster: digital-assistant (c-m-vpnk87z2).
+- GPU node: discover the actual downstream VM with NVIDIA L40S-16Q.
+- GPU: 16 GiB NVIDIA vGPU.
+- Current AI Factory Ollama workload: ollama-system.
+- Model: gpt-oss:20b.
+- Liz domain: http://aidigitalassistant.demo.local/
+
+IMPORTANT:
+Native Ollama MUST be installed on the downstream GPU VM, NOT the Rancher management VM, unless they are proven to be the same GPU-equipped machine.
+
+PHASE 1 — INSTALL NATIVE OLLAMA
+
+1. Connect to the downstream GPU VM using existing SSH access.
+2. Verify nvidia-smi, vGPU licensing, GPU memory, driver and OS.
+3. Check disk capacity, network and existing port 11434 listeners.
+4. Install the current stable official Ollama Linux build using the official installation instructions:
+   https://docs.ollama.com/linux
+5. Use the native Ollama binary with the existing host NVIDIA driver.
+6. Do not reinstall or alter the NVIDIA driver, vGPU license, RKE2 or GPU Operator.
+7. Create/enable the persistent ollama.service systemd service.
+8. Configure the service with:
+   OLLAMA_KEEP_ALIVE=-1
+   OLLAMA_MAX_LOADED_MODELS=1
+   OLLAMA_NUM_PARALLEL=1
+   OLLAMA_CONTEXT_LENGTH=4096
+
+9. Confirm Ollama starts successfully and is enabled for reboot.
+10. Download gpt-oss:20b onto persistent VM storage using ollama pull.
+11. Confirm the model exists without relying on Kubernetes PVCs.
+
+Do not stop the production Kubernetes workload yet.
+
+PHASE 2 — RELEASE GPU AND TEST
+
+1. Connect to the verified digital-assistant downstream cluster.
+2. Identify the current AI Factory-managed Ollama workload and its authoritative Fleet/Helm configuration.
+3. Ensure the native installation, model download and service are ready before causing any downtime.
+4. Scale the Kubernetes Ollama deployment to ZERO through its authoritative management configuration.
+5. Ensure Fleet/Helm will not automatically restore the replica.
+6. Preserve Liz and unrelated deployments.
+7. Do not delete Longhorn PVCs or other data.
+8. Confirm no other Ollama inference process is consuming GPU VRAM.
+
+Run native GPU inference:
+
+   ollama run gpt-oss:20b "Explain GPU inference in one sentence"
+
+Then execute:
+
+   ollama ps
+   nvidia-smi
+
+SUCCESS REQUIRES:
+- Inference succeeds.
+- Ollama reports CUDA GPU discovery.
+- ollama ps reports 100% GPU.
+- nvidia-smi confirms the model occupies GPU memory.
+
+If CPU is selected, collect the exact native Ollama CUDA failure and fix the native Ollama setup. Do not migrate Liz while GPU testing fails.
+
+Do not force success by substituting another model.
+The 16 GiB vGPU may constrain full placement; report that limitation accurately if encountered.
+
+PHASE 3 — AUTOMATIC GPU PRELOAD
+
+After native GPU inference works:
+
+1. Keep ollama.service enabled under systemd.
+2. Create an idempotent systemd-managed startup warmup mechanism.
+3. On every Ollama service start/restart:
+   - Wait until the local API is healthy.
+   - Confirm gpt-oss:20b is available.
+   - Preload using:
+
+     POST http://127.0.0.1:11434/api/generate
+     {"model":"gpt-oss:20b","keep_alive":-1}
+
+4. Use a working localhost endpoint for preload regardless of the external listening address.
+5. Ensure the warmup mechanism executes again after service restart, not only once at boot.
+6. Check that Liz does not override keep_alive with a finite value.
+7. Verify ollama ps continues to show GPU residency after 10 minutes idle.
+
+TEST:
+- Restart ollama.service.
+- Confirm automatic model reload.
+- Confirm GPU inference.
+- Confirm systemd service is enabled.
+- If safely authorized, validate after VM reboot; otherwise verify boot enablement and service-restart recovery without rebooting the node.
+
+PHASE 4 — EXPOSE PRIVATE OLLAMA API
+
+1. Discover the VM's actual private routable IP.
+2. Configure Ollama to listen on the required interface at port 11434.
+3. Do not expose an unauthenticated Ollama API publicly.
+4. Restrict TCP 11434 to Liz's required source network/addresses using existing firewall and network controls.
+5. Preserve loopback access for local health and preload operations.
+6. Test connectivity from inside Liz's actual container:
+
+   http://<GPU_VM_PRIVATE_IP>:11434/api/tags
+
+7. Verify inference API connectivity from the Liz workload.
+
+PHASE 5 — SWITCH LIZ
+
+1. Identify Liz's actual Ollama backend URL configuration.
+2. Change ONLY the Ollama backend endpoint to:
+
+   http://<GPU_VM_PRIVATE_IP>:11434
+
+3. Keep the existing Liz user-facing domain:
+   http://aidigitalassistant.demo.local/
+
+4. Do not disable Liz's Ingress.
+5. Disable or remove ONLY obsolete Ollama-specific public Ingress if one exists and is no longer needed.
+6. Keep or remove the old Kubernetes Ollama Service based on actual dependencies; it does not have to be removed merely because native Ollama uses port 11434.
+7. Apply the endpoint change through the authoritative AI Factory/Fleet/Helm configuration so reconciliation preserves it.
+8. Test real Liz chat inference.
+9. Confirm native Ollama GPU memory consumption during the Liz request.
+
+PHASE 6 — FINAL VALIDATION
+
+Required checks:
+
+[ ] Native Ollama service active
+[ ] systemctl is-enabled ollama = enabled
+[ ] gpt-oss:20b downloaded to persistent VM storage
+[ ] Real inference works
+[ ] ollama ps = 100% GPU
+[ ] nvidia-smi confirms VRAM consumption
+[ ] OLLAMA_KEEP_ALIVE=-1
+[ ] Automatic preload after service restart
+[ ] 10-minute idle GPU residency verified
+[ ] Kubernetes Ollama replicas = 0
+[ ] No competing GPU workloads
+[ ] Liz points to native VM private IP
+[ ] Liz original domain works
+[ ] Actual Liz response generated successfully
+[ ] API port restricted to trusted network
+
+FINAL OUTPUT:
+Keep it extremely short:
+
+GPU VM IP:
+Native Ollama version:
+systemd status:
+Model:
+ollama ps output:
+GPU VRAM used:
+Kubernetes Ollama replicas:
+Liz endpoint:
+Liz test: PASS/FAIL
+Restart preload: PASS/FAIL
+
+Fix issues within the authorized scope rather than stopping at suspected causes.
+
+If native GPU inference cannot reach 100% GPU, do not claim success or switch Liz. Report the specific verified blocker.
+
+DO THE WORK NOW.EXECUTE NOW. NO MORE OLD PVC RECOVERY OR INVESTIGATION LOOPS.
 
 GOAL:
 Deploy a FRESH GPU-enabled Ollama through SUSE AI Factory on the Rancher-managed digital-assistant downstream cluster, create NEW Longhorn persistent storage, download gpt-oss:20b, keep it loaded on GPU, and make Liz work on its EXISTING domain.
