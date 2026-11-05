@@ -1,71 +1,154 @@
-TASK: FIX AND DEPLOY GPU-ENABLED OLLAMA THROUGH SUSE AI FACTORY. EXECUTE, DON'T JUST EXPLAIN.
+EXECUTE NOW. NO MORE OLD PVC RECOVERY OR INVESTIGATION LOOPS.
 
-Environment:
-- Rancher management VM with existing credentials.
-- Downstream cluster: Digital AI Assistant.
-- Namespace: ollama-system.
-- Existing SUSE AI Factory Ollama release: digitalassistant-ollama.
-- Candidate release: digitalassistant-gpu-ollama (previously 0 replicas).
-- Model: gpt-oss:20b.
-- GPU: NVIDIA L40S-16Q, 16 GiB vGPU.
-- Liz must continue using the Ollama service.
+GOAL:
+Deploy a FRESH GPU-enabled Ollama through SUSE AI Factory on the Rancher-managed digital-assistant downstream cluster, create NEW Longhorn persistent storage, download gpt-oss:20b, keep it loaded on GPU, and make Liz work on its EXISTING domain.
 
-IMPORTANT KNOWN FACTS:
-- Independent CUDA 12.8.1 test PASSED: cuInit, GPU enumeration, VRAM allocation, and GPU kernel execution.
-- GPU Operator and GPU compute work. DO NOT reinstall GPU Operator or change NVIDIA drivers.
-- Previous Ollama v0.40.12 selected CPU and discovered 0 GPU VRAM.
-- Rancher downstream cluster agent disconnected during previous cleanup.
-- Original Ollama restoration is unconfirmed.
-- Previous rollback timer was missing.
-- Existing backup location: /root/ollama-gpu-repair.
+I AUTHORIZE REMOVAL OF THE OLD OLLAMA APPLICATION AND FAILED CANDIDATE. OLD MODEL DATA DOES NOT NEED TO BE RECOVERED.
 
-EXECUTION REQUIREMENTS:
+KNOWN ENVIRONMENT:
+- Rancher downstream cluster: digital-assistant (c-m-vpnk87z2)
+- Namespace: ollama-system
+- Original release: digitalassistant-ollama
+- Failed candidate: digitalassistant-gpu-ollama
+- Model: gpt-oss:20b
+- GPU: NVIDIA L40S-16Q, 16 GiB, one allocatable GPU
+- Existing Liz domain: http://aidigitalassistant.demo.local/
+- SUSE Application Collection and SUSE AI Factory already configured.
+- SUSE chart 1.95.0 previously verified to publish Ollama image 0.40.14-nvidia-2.8.
+- CUDA 12.8.1 compute was PROVEN WORKING on this GPU, including memory allocation and kernel execution.
 
-1. First verify direct access to the correct downstream RKE2 cluster. If Rancher proxy is disconnected, use existing authorized direct downstream Kubernetes access. Do not assume an empty proxy response means no workloads exist. If no verified cluster access is available, stop without changing anything.
+DO THESE ACTIONS IN ORDER:
 
-2. Inspect the existing AI Factory-managed Ollama Helm release, backups, current replicas, service, PVC and GPU capacity. Confirm actual state before modifying. Preserve all existing model data, Liz settings, Services and credentials. Save a verified rollback configuration. Do not run an unverified rollback script.
+1. CONNECT
+Use the Rancher-authorized connection to cluster digital-assistant, NOT the unrelated direct kubeconfig. Confirm cluster identity and reachability.
 
-3. Use the SUSE AI Factory-supported Helm release/chart and compatible GPU-capable Ollama image. Repair the existing release or replace the failed candidate, whichever is safer. Do not deploy an unrelated standalone Ollama installation. Set the actual chart-supported GPU values:
-   ollama.gpu.enabled=true
-   ollama.gpu.type=nvidia
-   ollama.gpu.number=1
-   ollama.gpu.nvidiaResource=nvidia.com/gpu
+2. CLEAN UP OLD OLLAMA
+Remove old digitalassistant-ollama and digitalassistant-gpu-ollama workloads/releases through their authoritative SUSE AI Factory/Fleet/Helm management mechanism.
+Stop any old assistant application component only if needed for this application's replacement.
+Do not delete Rancher, GPU Operator, Longhorn or unrelated workloads.
+Do not waste time trying to recover old PVCs or model files.
+Remove stale application resources that would conflict with the fresh deployment. Preserve the domain and ingress routing configuration needed for Liz.
 
-4. Fix Ollama CUDA GPU detection. Use the previously passing CUDA test as evidence the GPU stack works. Collect only essential Ollama error logs. Correct the Ollama image/backend/runtime issue based on the error. Do not blindly modify GPU Operator, drivers, CDI injection, NVIDIA_VISIBLE_DEVICES or LD_LIBRARY_PATH.
+3. CREATE FRESH LONGHORN STORAGE
+Verify that the Longhorn StorageClass is available and healthy.
+Create a fresh PVC using:
+  storageClassName: longhorn
+  accessModes: ReadWriteOnce
+  requestedStorage: 80Gi
 
-5. Keep these settings in the managed Ollama server configuration, using the actual chart-supported env syntax:
-   OLLAMA_KEEP_ALIVE=-1
-   OLLAMA_MAX_LOADED_MODELS=1
-   OLLAMA_NUM_PARALLEL=1
-   OLLAMA_CONTEXT_LENGTH=4096
+Use dynamic provisioning so Longhorn automatically creates the backing PV.
 
-6. Ensure gpt-oss:20b automatically PRELOADS AFTER EVERY OLLAMA START/RESTART with keep_alive=-1. Use the supported AI Factory chart mechanism where possible; otherwise use a minimal idempotent warmup mechanism managed with the release. Do not confuse downloaded model files with VRAM residency.
+Confirm PVC is Bound and the volume is healthy.
+Do not use local-path or emptyDir for model storage.
 
-7. Verify REAL inference:
-   - Ollama successfully discovers nonzero NVIDIA GPU VRAM.
-   - gpt-oss:20b generates an actual answer.
-   - ollama ps shows 100% GPU.
-   - nvidia-smi shows GPU memory used.
-   - GPU model remains loaded after 10 minutes idle.
-   - Controlled restart reloads model automatically on GPU.
-   - Liz's existing Ollama API endpoint still works.
+4. DEPLOY FRESH SUSE AI FACTORY OLLAMA
+Use the supported SUSE AI Factory application/AIWorkload mechanism and SUSE Application Collection Ollama Helm chart.
 
-8. There may be only ONE exclusive GPU. Never schedule two GPU-requesting Ollama replicas against the same GPU. Safely restore or stop the old deployment when necessary. Preserve rollback and avoid deleting PVCs.
+Select a current supported NVIDIA GPU-enabled image.
+Start with the verified chart/image combination if compatible. Do not reuse the previously failing Ollama 0.40.12-nvidia-2.4 image.
 
-9. If the candidate passes, complete the production cutover through the authoritative SUSE AI Factory-managed release, preserving Liz endpoint and model name. Do not abandon a scaled-to-zero production Ollama deployment.
+Configure chart values using the verified chart schema:
 
-10. If any change fails, restore the previously verified working release and report the exact blocker. Do not report success unless 100% GPU inference and Liz connectivity are verified.
+  ollama:
+    gpu:
+      enabled: true
+      type: nvidia
+      number: 1
+      nvidiaResource: nvidia.com/gpu
+    models:
+      pull:
+        - gpt-oss:20b
+      run:
+        - gpt-oss:20b
 
-AUTONOMY:
-Execute normal scoped application changes without repeated clarification. Do not perform host reboot, cluster reinstall, destructive storage operations or unrelated workload changes.
+  persistentVolume:
+    enabled: true
+    storageClass: longhorn
+    accessModes:
+      - ReadWriteOnce
+    size: 80Gi
 
-OUTPUT:
-Keep console output concise. Show only:
-- Final deployment and health
-- Ollama image/version
-- GPU detection and ollama ps result
-- Auto-preload/keep-alive status
-- Liz connectivity
-- Exact unresolved blocker if unsuccessful
+If using the separately created PVC, configure the chart's existingClaim field instead of creating a second PVC.
 
-DO THE WORK NOW. Do not return another generic plan or investigation-only report.
+Configure required imagePullSecrets from the existing SUSE Application Collection setup.
+
+Set these Ollama server environment variables using the correct chart-supported syntax:
+
+  OLLAMA_KEEP_ALIVE=-1
+  OLLAMA_MAX_LOADED_MODELS=1
+  OLLAMA_NUM_PARALLEL=1
+  OLLAMA_CONTEXT_LENGTH=4096
+
+Use exactly 1 Ollama replica requesting 1 nvidia.com/gpu.
+
+5. DOWNLOAD AND PRELOAD MODEL
+Download gpt-oss:20b to the Longhorn volume.
+Wait for download completion.
+Load the model through Ollama's API with keep_alive=-1.
+Ensure startup/restart automatically performs the preload once the server is ready.
+
+6. FIX GPU INFERENCE IF NEEDED
+Run a real inference immediately.
+Verify nonzero CUDA GPU VRAM detection.
+
+If the new image still chooses CPU:
+- Collect exact GPU discovery errors.
+- Correct the Ollama image/backend/runtime issue.
+- Test again.
+- Use another supported compatible NVIDIA Ollama image if needed.
+
+Do not reinstall the proven-working GPU Operator or NVIDIA drivers.
+
+Required:
+  ollama ps -> 100% GPU
+  nvidia-smi -> model occupies GPU VRAM
+  Real model inference -> successful
+
+If 16 GiB VRAM is insufficient, try supported context/concurrency tuning while keeping the same model. Do not falsely claim 100% GPU.
+
+7. RESTORE LIZ ON SAME DOMAIN
+Keep:
+  http://aidigitalassistant.demo.local/
+
+Preserve existing DNS/Ingress/TLS behavior.
+
+Reconnect Liz to the NEW Ollama ClusterIP service on port 11434.
+
+Do not replace Liz's UI domain with the raw Ollama API.
+Preserve existing Liz authentication and unrelated configuration.
+
+Verify Liz can generate a successful response with gpt-oss:20b.
+
+8. TEST RESTART AND RETENTION
+Verify:
+- Ollama pod Running and Ready
+- Longhorn PVC Bound
+- GPU resource allocated
+- gpt-oss:20b 100% GPU inference
+- Model loaded in GPU memory
+- Model remains loaded after idle
+- Controlled Ollama restart
+- Model automatically preloaded on GPU again
+- Liz working on original domain
+- Fleet/AI Factory shows a healthy, reconciled workload
+
+9. FINAL OUTPUT ONLY
+Report:
+- Deployment: name / namespace / status
+- SUSE Ollama chart and image version
+- Longhorn PVC / PV / size / status
+- Actual ollama ps output
+- Actual NVIDIA GPU memory usage
+- GPU auto-preload: PASS/FAIL
+- Liz domain connectivity: PASS/FAIL
+- Any exact remaining blocker
+
+EXECUTION RULES:
+- No additional approval for routine application replacement, fresh PVC creation, model download, or scoped configuration changes.
+- Do not stop merely because the old PVC is missing. We are creating a fresh one.
+- Do not return another plan instead of executing.
+- Do not silently downgrade to CPU.
+- Do not claim success until actual GPU inference and Liz connectivity pass.
+- If cluster access or another external dependency genuinely blocks execution, report that exact blocker without inventing progress.
+
+FINISH THE WORK.
