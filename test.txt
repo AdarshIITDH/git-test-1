@@ -1,4 +1,4 @@
-You are working on the Rancher management VM. Perform a STRICTLY READ-ONLY investigation of the SUSE AI Factory Ollama workload deployed on the Rancher-managed downstream Kubernetes cluster named Digital AI Assistant.
+You are working on the Rancher management VM. Perform a STRICTLY READ-ONLY investigation of the SUSE AI Factory Ollama workload deployed on the Rancher-managed downstream Kubernetes cluster named digital-assistant.
 
 ABSOLUTE RULES:
 - Do not edit, patch, restart, scale, delete, deploy, upgrade, or reconfigure ANY resource.
