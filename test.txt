@@ -1,90 +1,25 @@
-You are working on the Rancher management VM. Perform a STRICTLY READ-ONLY investigation of the SUSE AI Factory Ollama workload deployed on the Rancher-managed downstream Kubernetes cluster named digital-assistant.
+Continue the previous STRICTLY READ-ONLY investigation on the Rancher-managed Digital AI Assistant downstream cluster.
 
-ABSOLUTE RULES:
-- Do not edit, patch, restart, scale, delete, deploy, upgrade, or reconfigure ANY resource.
-- Do not change Helm values, Kubernetes manifests, ConfigMaps, Secrets, files, or environment variables.
-- Do not pull, run, preload, stop, or unload Ollama models.
-- Do not send inference requests to Ollama or the SUSE AI Assistant.
-- Do not invoke kubectl config use-context, kubectl apply, helm upgrade, kubectl rollout restart, or any write action.
-- Do not print or expose access tokens, kubeconfig credentials, passwords, Secret contents, or full sensitive configuration.
-- Use only inspection commands. Do not change anything on the management VM or downstream cluster.
-- If downstream credentials or permissions are unavailable, report the blocker and stop. Do not install or download anything.
+Focus ONLY on why Ollama reports zero GPU VRAM even though nvidia-smi detects the NVIDIA L40S-16Q vGPU.
 
-KNOWN ENVIRONMENT:
-Rancher management VM: the current machine
-Target: Rancher-managed downstream cluster, Digital AI Assistant (not the Rancher management cluster)
-Namespace: ollama-system
-Observed pod: digitalassistant-ollama-6c4475fdcb-skt4r (discover current pod dynamically)
-Deployment: digitalassistant-ollama
-Ollama model: gpt-oss:20b
-Observed GPU: NVIDIA L40S-16Q vGPU, approximately 16 GiB VRAM
-Existing Helm values indicate:
-ollama.gpu.enabled=true
-ollama.gpu.type=nvidia
-ollama.gpu.number=1
-ollama.gpu.nvidiaResource=nvidia.com/gpu
-ollama.models.run includes gpt-oss:20b
+Do not modify anything, restart pods, run inference, preload models, patch settings, or change Helm values. Use explicitly pinned downstream-cluster kubeconfig/context for every Kubernetes command. Do not disclose credentials.
 
-INVESTIGATION:
+Investigate:
+1. Determine exactly which Ollama version and container image are running.
+2. Check the actual Ollama server process environment: CUDA_VISIBLE_DEVICES, NVIDIA_VISIBLE_DEVICES, NVIDIA_DRIVER_CAPABILITIES, LD_LIBRARY_PATH, OLLAMA_LLM_LIBRARY, and OLLAMA_KEEP_ALIVE.
+3. Inspect actual Ollama backend installation paths including /usr/lib/ollama/cuda_v12 and /var/lib/ollama/cuda_v12.
+4. Confirm whether libcuda.so.1, libnvidia-ml.so.1, and required CUDA runner dependencies are available through the runtime dynamic linker.
+5. Check /dev/nvidia*, particularly /dev/nvidia-uvm, and GPU Operator/device-plugin configuration.
+6. Determine whether NVIDIA_VISIBLE_DEVICES=void is expected in this Kubernetes deployment with device plugin/CDI injection or is preventing CUDA compute access.
+7. Examine existing Ollama logs for the exact error responsible for zero detected VRAM and CPU fallback. Distinguish CUDA library-loading failure, driver/API failure, device permission failure, and memory allocation failure.
+8. Determine whether OLLAMA_KEEP_ALIVE is currently five minutes and whether Liz requests override keep_alive, using only accessible non-sensitive configuration/log evidence.
+9. Explain whether the observed CUDA path mismatch is actually causal or merely coincidental.
 
-1. Access and identity:
-- Discover existing Rancher/downstream kubeconfig and permitted access methods safely.
-- Confirm exact target cluster identity before inspection.
-- Use explicitly pinned --kubeconfig and --context for every kubectl command.
-- Never accidentally inspect the Rancher management cluster as if it were the downstream cluster.
-- If necessary, use existing authorized read-only Rancher API access, never expose credentials.
+Return:
+- Exact evidence for CUDA discovery failure
+- Root cause: CONFIRMED / LIKELY / UNKNOWN
+- Whether GPU is currently usable by Ollama (not just nvidia-smi)
+- Safest supported corrective configuration proposal for the installed SUSE image
+- Whether KEEP_ALIVE=-1 plus startup preload would satisfy permanent model residency
 
-2. Kubernetes GPU allocation:
-- Inspect current Ollama pod, owning Deployment, namespace, node, events and restart history.
-- Check nvidia.com/gpu requests and limits in the actual pod spec.
-- Check node GPU allocatable and allocated resources.
-- Inspect GPU Operator, device plugin and GPU initialization health using only read commands.
-
-3. GPU availability:
-- Run nvidia-smi inside the existing Ollama pod if available.
-- Inspect GPU memory consumption and current utilization.
-- Verify GPU device exposure, NVIDIA_VISIBLE_DEVICES, CUDA_VISIBLE_DEVICES and relevant GPU runtime settings.
-- Distinguish GPU accessible from model actually resident in GPU memory.
-
-4. Ollama model state:
-- Run ollama list and ollama ps in the existing container.
-- Record gpt-oss:20b presence, current PROCESSOR value and UNTIL information, if loaded.
-- Determine whether the model is on GPU, CPU, partly offloaded, or not currently loaded.
-- Do not trigger model loading just to test it.
-
-5. Model retention and startup:
-- Inspect OLLAMA_KEEP_ALIVE and OLLAMA_MAX_LOADED_MODELS environment settings.
-- Check configured models.pull and models.run from non-sensitive Helm values and workload configuration.
-- Determine whether the deployment performs model preload at container startup.
-- Determine whether any setting pins the model in VRAM or allows default idle unloading.
-- Inspect relevant current and previous Ollama logs for model loading, unloading, expiry, VRAM allocation, CUDA detection, runner startup, runner termination and fallback to CPU.
-- Check whether Ollama logs or available non-sensitive SUSE AI Assistant settings indicate a per-request keep_alive override.
-- Do not assume that models.run guarantees indefinite GPU residency.
-
-6. GPU memory and resource constraints:
-- Inspect model size, configured context and concurrency if these can be obtained without inference.
-- Compare memory requirements against the L40S-16Q vGPU's available VRAM.
-- Look for insufficient GPU memory, CPU offloading, OOM, runner errors, vGPU licensing errors and device initialization issues.
-- Check whether the workload restart or model-unload events correlate with these findings.
-
-7. Restart behavior:
-- Determine whether the Ollama pod was recreated, container restarted, or only the model was unloaded.
-- Review recent events and available logs.
-- Determine whether model presence on persistent storage is being confused with model residency in GPU memory.
-
-FINAL OUTPUT:
-Provide a concise technical report with:
-A. Target cluster and workload verified
-B. Kubernetes GPU allocation status
-C. GPU visibility inside container
-D. Model currently loaded? CPU/GPU/mixed/not loaded
-E. Keep-alive and preload configuration
-F. Relevant restart and Ollama log evidence
-G. Most likely root cause, ranked by evidence
-H. Exact recommended configuration adjustments for a later maintenance step, but DO NOT IMPLEMENT THEM
-I. What could not be verified and why
-
-Mark each finding CONFIRMED, LIKELY or NOT VERIFIED.
-Include actual evidence and relevant command output, with credentials redacted.
-Do not claim that GPU inference is confirmed simply because nvidia-smi works.
-Do not modify anything. This task ends after reporting.
+Do not apply any fix. Finish with findings only.
