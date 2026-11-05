@@ -1,52 +1,47 @@
-Continue investigating the existing Digital AI Assistant downstream cluster.
+Continue investigation on the existing Digital AI Assistant downstream cluster.
 
-Perform ONE controlled Ollama inference diagnostic to identify why GPU inference is falling back to CPU.
+STRICTLY READ-ONLY. No Kubernetes modifications, Helm changes, restarts, package installations, driver resets, or model inference requests.
 
-Target:
+Known:
 - Namespace: ollama-system
-- Workload: digitalassistant-ollama
-- Model: gpt-oss:20b
-- GPU: NVIDIA L40S-16Q vGPU (16 GiB)
+- Deployment: digitalassistant-ollama
+- GPU: NVIDIA L40S-16Q vGPU
+- Ollama: v0.40.12
+- Confirmed: CPU runner selected and zero GPU VRAM discovered
 
-Rules:
-- Do NOT modify Kubernetes resources, Helm values, environment variables, or files.
-- Do NOT restart pods, drivers, GPU Operator, or Ollama.
-- Do NOT download models or install packages.
-- Do NOT change NVIDIA_VISIBLE_DEVICES or LD_LIBRARY_PATH.
-- Use the verified downstream cluster context.
-- One test inference is permitted; acknowledge that it temporarily loads the existing model into memory.
+GOAL:
+Determine whether CUDA Driver API works independently of Ollama inside the SAME running container.
 
-Tasks:
+1. Verify the downstream cluster context.
 
-1. Capture Ollama's current GPU discovery logs.
-2. Record nvidia-smi memory and device status.
-3. Send ONE short inference request to the existing Ollama server using gpt-oss:20b and keep_alive=5m.
-4. Record whether inference succeeds.
-5. Immediately run ollama ps and nvidia-smi.
-6. Inspect new Ollama logs for:
-   - CUDA discovery
-   - GPU enumeration
-   - GPU VRAM detection
-   - Backend selection
-   - Model layer offloading
-   - CPU fallback
-   - CUDA initialization errors
-7. Report whether the model loaded:
-   - 100% GPU
-   - Partial GPU/CPU
-   - 100% CPU
-   - Failed to load
-8. Correlate the inference result with relevant server logs.
-9. If logs lack details, explain exactly which diagnostic logging settings would be needed in a later maintenance window.
+2. Check NVIDIA device nodes, especially:
+   /dev/nvidia0
+   /dev/nvidiactl
+   /dev/nvidia-uvm
 
-Do not apply fixes.
+3. Check whether libcuda.so.1 resolves in the container.
 
-Final report:
-- GPU detection result
-- Exact inference backend selected
-- GPU and CPU residency percentages
-- Relevant error messages
-- Most likely root cause
-- Smallest proposed fix, not implemented
+4. If Python 3 is already available, use Python ctypes in memory (no script files) to load libcuda.so.1 and call:
+   - cuInit(0)
+   - cuDeviceGetCount()
+   - cuDriverGetVersion()
 
-Clearly separate confirmed facts from hypotheses.
+   Capture exact return codes and error descriptions.
+   Do not allocate GPU memory or launch a kernel.
+
+5. If Python is unavailable, look for an existing CUDA diagnostic executable. Do not install or build anything.
+
+6. Inspect whether CUDA_VISIBLE_DEVICES or OLLAMA_LLM_LIBRARY explicitly restrict GPU discovery.
+
+7. Check existing GPU Operator/device-plugin logs and available NVIDIA driver messages for relevant initialization errors.
+
+8. Classify the result:
+   A. CUDA Driver API works, Ollama discovery fails
+   B. CUDA Driver API fails, including exact error code
+   C. CUDA API could not be tested
+
+9. Recommend the smallest supported correction based only on evidence.
+
+Do not implement changes.
+
+Return a concise report with exact outputs and evidence.
